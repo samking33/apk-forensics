@@ -114,10 +114,11 @@ FORENSIC_FACTS = [
 ]
 
 def get_random_fact():
-    \"\"\"Get a random forensic fact.\"\"\"
+    """Get a random forensic fact."""
     import random
     return random.choice(FORENSIC_FACTS)
 
 def get_all_facts():
-    \"\"\"Get all forensic facts.\"\"\"
+    """Get all forensic facts."""
     return FORENSIC_FACTS.copy()
+

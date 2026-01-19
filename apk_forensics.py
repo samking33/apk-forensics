@@ -12,10 +12,18 @@ import subprocess
 import argparse
 import logging
 import yaml
+import time
+import threading
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
 import platform
+
+try:
+    from forensic_facts import get_all_facts
+except ImportError:
+    def get_all_facts():
+        return ["APK forensics in progress..."]
 
 try:
     import pyfiglet
@@ -298,10 +306,60 @@ class APKForensics:
         
         return report_dir
     
-    def analyze_apk_with_claude(self, apk_path: str) -> str:
+    def estimate_analysis_time(self, apk_size_mb: float) -> int:
+        """Estimate analysis time based on APK size in MB."""
+        # Base time: 2 minutes for small APKs
+        # Additional: 30 seconds per MB
+        base_time = 120  # 2 minutes
+        time_per_mb = 30  # 30 seconds per MB
+        estimated = int(base_time + (apk_size_mb * time_per_mb))
+        return min(estimated, self.config['claude']['timeout'])  # Cap at timeout
+    
+    def display_rotating_facts(self, stop_event: threading.Event, no_color: bool = False):
+        """Display rotating forensic facts during analysis."""
+        facts = get_all_facts()
+        fact_index = 0
+        
+        while not stop_event.is_set():
+            fact = facts[fact_index % len(facts)]
+            
+            # Clear line and display fact
+            if not no_color:
+                print(f"\r\033[K💡 {colored(fact, 'cyan')}", end='', flush=True)
+            else:
+                print(f"\r{fact}", end='', flush=True)
+            
+            fact_index += 1
+            
+            # Wait 10 seconds or until stopped
+            if stop_event.wait(10):
+                break
+        
+        # Clear the line when done
+        print("\r\033[K", end='', flush=True)
+    
+    def analyze_apk_with_claude(self, apk_path: str, no_color: bool = False) -> str:
         """Analyze APK using Claude CLI with auto-approved tool execution."""
         apk_name = os.path.basename(apk_path)
         self.logger.info(f"Starting analysis of {apk_name}")
+        
+        # Calculate APK size and estimate time
+        apk_size_bytes = os.path.getsize(apk_path)
+        apk_size_mb = apk_size_bytes / (1024 * 1024)
+        estimated_time = self.estimate_analysis_time(apk_size_mb)
+        
+        # Display size and time estimate
+        size_msg = f"\n📦 APK Size: {apk_size_mb:.2f} MB"
+        time_msg = f"⏱️  Estimated Time: {estimated_time // 60} min {estimated_time % 60} sec"
+        
+        if not no_color:
+            print(colored(size_msg, "yellow"))
+            print(colored(time_msg, "yellow"))
+        else:
+            print(size_msg)
+            print(time_msg)
+        
+        print(colored("\n🔍 Deep forensic analysis in progress...\n", "green") if not no_color else "\nDeep forensic analysis in progress...\n")
         
         try:
             report_dir = self.create_report_directory(apk_path)
@@ -324,18 +382,32 @@ class APKForensics:
             
             self.logger.debug(f"Executing Claude CLI: {' '.join(cmd)}")
             
-            process = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
+            # Start rotating facts display in background thread
+            stop_facts = threading.Event()
+            facts_thread = threading.Thread(
+                target=self.display_rotating_facts,
+                args=(stop_facts, no_color),
+                daemon=True
             )
+            facts_thread.start()
             
-            stdout_data, stderr_data = process.communicate(
-                input=analysis_prompt,
-                timeout=self.config['claude']['timeout']
-            )
+            try:
+                process = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                
+                stdout_data, stderr_data = process.communicate(
+                    input=analysis_prompt,
+                    timeout=self.config['claude']['timeout']
+                )
+            finally:
+                # Stop facts display
+                stop_facts.set()
+                facts_thread.join(timeout=1)
             
             if process.returncode != 0:
                 self.logger.error(f"Claude CLI failed: {stderr_data}")
@@ -408,7 +480,7 @@ class APKForensics:
             reports = []
             for apk in apks:
                 try:
-                    report_path = self.analyze_apk_with_claude(apk)
+                    report_path = self.analyze_apk_with_claude(apk, no_color=no_color)
                     reports.append(report_path)
                 except Exception as e:
                     error_msg = f"Error analyzing {os.path.basename(apk)}: {str(e)}"

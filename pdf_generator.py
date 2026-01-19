@@ -19,12 +19,18 @@ from reportlab.pdfgen import canvas
 class PDFReportGenerator:
     """Generate professional PDF reports from forensic analysis text files."""
     
-    # fSOC Brand Colors
-    FSOC_RED = HexColor('#DC143C')  # Crimson red
-    FSOC_GREEN = HexColor('#00FF00')  # Matrix green
-    FSOC_DARK = HexColor('#1a1a1a')  # Dark background
-    FSOC_GRAY = HexColor('#333333')  # Dark gray
-    FSOC_LIGHT_GRAY = HexColor('#CCCCCC')  # Light gray
+    # Professional Color Scheme
+    PRIMARY_DARK = HexColor('#1a1a2e')      # Dark navy blue
+    PRIMARY_RED = HexColor('#e63946')       # Professional red
+    ACCENT_BLUE = HexColor('#457b9d')       # Professional blue
+    TEXT_DARK = HexColor('#2b2d42')         # Dark gray for text
+    TEXT_LIGHT = HexColor('#555555')        # Medium gray
+    CODE_BG = HexColor('#f8f9fa')           # Light gray background
+    CODE_TEXT = HexColor('#212529')         # Dark text for code
+    WARNING_BG = HexColor('#fff3cd')        # Light yellow background
+    WARNING_BORDER = HexColor('#ffc107')    # Amber border
+    CRITICAL_BG = HexColor('#f8d7da')       # Light red background
+    CRITICAL_BORDER = HexColor('#dc3545')   # Red border
     
     def __init__(self, text_report_path: str, output_pdf_path: str = None):
         """Initialize PDF generator with text report path."""
@@ -54,8 +60,8 @@ class PDFReportGenerator:
         styles.add(ParagraphStyle(
             name='FSocTitle',
             parent=styles['Heading1'],
-            fontSize=24,
-            textColor=self.FSOC_RED,
+            fontSize=28,
+            textColor=self.PRIMARY_DARK,
             spaceAfter=30,
             alignment=TA_CENTER,
             fontName='Helvetica-Bold'
@@ -66,7 +72,7 @@ class PDFReportGenerator:
             name='FSocSubtitle',
             parent=styles['Heading2'],
             fontSize=14,
-            textColor=self.FSOC_GRAY,
+            textColor=self.TEXT_LIGHT,
             spaceAfter=12,
             alignment=TA_CENTER,
             fontName='Helvetica'
@@ -77,13 +83,14 @@ class PDFReportGenerator:
             name='FSocSection',
             parent=styles['Heading2'],
             fontSize=16,
-            textColor=self.FSOC_RED,
+            textColor=white,
             spaceBefore=20,
             spaceAfter=12,
             fontName='Helvetica-Bold',
-            borderWidth=1,
-            borderColor=self.FSOC_RED,
-            borderPadding=5
+            backColor=self.PRIMARY_RED,
+            borderPadding=8,
+            leftIndent=0,
+            rightIndent=0
         ))
         
         # Subsection header
@@ -91,10 +98,11 @@ class PDFReportGenerator:
             name='FSocSubsection',
             parent=styles['Heading3'],
             fontSize=13,
-            textColor=self.FSOC_DARK,
+            textColor=self.ACCENT_BLUE,
             spaceBefore=12,
             spaceAfter=8,
-            fontName='Helvetica-Bold'
+            fontName='Helvetica-Bold',
+            leftIndent=10
         ))
         
         # Code/Technical style
@@ -102,13 +110,16 @@ class PDFReportGenerator:
             name='FSocCode',
             parent=styles['Code'],
             fontSize=9,
-            textColor=self.FSOC_GREEN,
+            textColor=self.CODE_TEXT,
             fontName='Courier',
             leftIndent=20,
             rightIndent=20,
             spaceBefore=6,
             spaceAfter=6,
-            backColor=HexColor('#f5f5f5')
+            backColor=self.CODE_BG,
+            borderWidth=1,
+            borderColor=HexColor('#dee2e6'),
+            borderPadding=8
         ))
         
         # Body text
@@ -116,10 +127,11 @@ class PDFReportGenerator:
             name='FSocBody',
             parent=styles['BodyText'],
             fontSize=10,
-            textColor=black,
-            alignment=TA_JUSTIFY,
+            textColor=self.TEXT_DARK,
+            alignment=TA_LEFT,
             spaceBefore=6,
-            spaceAfter=6
+            spaceAfter=6,
+            leading=14
         ))
         
         # Critical/Warning style
@@ -127,14 +139,33 @@ class PDFReportGenerator:
             name='FSocCritical',
             parent=styles['BodyText'],
             fontSize=11,
-            textColor=self.FSOC_RED,
+            textColor=self.CRITICAL_BORDER,
             fontName='Helvetica-Bold',
+            spaceBefore=10,
+            spaceAfter=10,
+            leftIndent=15,
+            rightIndent=15,
+            borderWidth=2,
+            borderColor=self.CRITICAL_BORDER,
+            borderPadding=10,
+            backColor=self.CRITICAL_BG
+        ))
+        
+        # Warning style
+        styles.add(ParagraphStyle(
+            name='FSocWarning',
+            parent=styles['BodyText'],
+            fontSize=10,
+            textColor=self.TEXT_DARK,
+            fontName='Helvetica',
             spaceBefore=8,
             spaceAfter=8,
-            leftIndent=10,
-            borderWidth=2,
-            borderColor=self.FSOC_RED,
-            borderPadding=8
+            leftIndent=15,
+            rightIndent=15,
+            borderWidth=1,
+            borderColor=self.WARNING_BORDER,
+            borderPadding=8,
+            backColor=self.WARNING_BG
         ))
         
         return styles
@@ -143,24 +174,31 @@ class PDFReportGenerator:
         """Add header and footer to each page."""
         canvas_obj.saveState()
         
-        # Header
-        canvas_obj.setFillColor(self.FSOC_DARK)
+        # Header - Professional dark blue bar
+        canvas_obj.setFillColor(self.PRIMARY_DARK)
         canvas_obj.rect(0, letter[1] - 0.75*inch, letter[0], 0.75*inch, fill=True, stroke=False)
         
-        canvas_obj.setFillColor(self.FSOC_RED)
-        canvas_obj.setFont('Helvetica-Bold', 16)
-        canvas_obj.drawString(0.75*inch, letter[1] - 0.5*inch, "fSOC APK FORENSICS")
-        
+        # Header text - fSOC branding
         canvas_obj.setFillColor(white)
-        canvas_obj.setFont('Helvetica', 10)
-        canvas_obj.drawString(0.75*inch, letter[1] - 0.65*inch, f"Analysis Report: {self.apk_name}")
+        canvas_obj.setFont('Helvetica-Bold', 18)
+        canvas_obj.drawString(0.75*inch, letter[1] - 0.45*inch, "fSOC APK FORENSICS")
         
-        # Footer
-        canvas_obj.setFillColor(self.FSOC_GRAY)
+        # Subheader
+        canvas_obj.setFillColor(HexColor('#cccccc'))
+        canvas_obj.setFont('Helvetica', 10)
+        canvas_obj.drawString(0.75*inch, letter[1] - 0.63*inch, f"Analysis Report: {self.apk_name}")
+        
+        # Footer - Clean and minimal
+        canvas_obj.setFillColor(self.TEXT_LIGHT)
         canvas_obj.setFont('Helvetica', 8)
         page_num = canvas_obj.getPageNumber()
         footer_text = f"Page {page_num} | Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Classification: TLP:WHITE"
         canvas_obj.drawCentredString(letter[0]/2, 0.5*inch, footer_text)
+        
+        # Footer line
+        canvas_obj.setStrokeColor(HexColor('#dee2e6'))
+        canvas_obj.setLineWidth(0.5)
+        canvas_obj.line(0.75*inch, 0.65*inch, letter[0] - 0.75*inch, 0.65*inch)
         
         canvas_obj.restoreState()
     
@@ -278,7 +316,7 @@ class PDFReportGenerator:
             ('FONTSIZE', (0, 0), (-1, -1), 10),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
             ('TOPPADDING', (0, 0), (-1, -1), 12),
-            ('GRID', (0, 0), (-1, -1), 1, self.FSOC_GRAY)
+            ('GRID', (0, 0), (-1, -1), 1, self.TEXT_LIGHT)
         ]))
         
         elements.append(info_table)

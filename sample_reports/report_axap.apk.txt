@@ -1,0 +1,536 @@
+================================================================================
+                      APK FORENSIC ANALYSIS REPORT
+                           MALWARE INVESTIGATION
+================================================================================
+
+Report Generated: 2026-01-19
+Analyst: Automated Forensic Analysis
+Classification: MALICIOUS - BANKING TROJAN / CRYPTOMINER / DROPPER HYBRID
+
+================================================================================
+                          EXECUTIVE SUMMARY
+================================================================================
+
+MALWARE TYPE: Banking Trojan / Cryptominer / Dropper Hybrid
+RISK LEVEL: CRITICAL (9/10)
+THREAT CATEGORY: Financial Fraud, Cryptocurrency Mining, Malware Distribution
+
+This APK masquerades as "Axis Cards" - a legitimate Indian banking application
+from Axis Bank. The malware exhibits multiple malicious behaviors including:
+
+  • Cryptocurrency mining using device resources
+  • Dropper functionality to install additional malicious payloads
+  • Aggressive persistence mechanisms to survive reboots and battery optimization
+  • Command & Control (C2) communication via HTTP/HTTPS and Firebase Cloud Messaging
+  • Identity deception with ability to change launcher icon to "Play Store"
+  • Heavy code obfuscation using Unicode strings and hash-based control flow
+
+The malware connects to infrastructure under the "uasecurity.org" domain for
+C2 communication, payload delivery, and mining pool connectivity.
+
+================================================================================
+                            METADATA
+================================================================================
+
+FILE INFORMATION
+----------------
+Filename:           axap.apk
+SHA-256:            c565a9cc689f40632b08e77554af70f686f396a8d47056d3e76f57fddea6e920
+File Size:          ~15 MB (estimated from extracted contents)
+
+PACKAGE INFORMATION
+-------------------
+Package Name:       com.NWilfxj.FxKDr
+Version Code:       3
+Version Name:       4.1-2025.4.21-42-44
+Application Label:  Axis Cards
+Min SDK Version:    23 (Android 6.0 Marshmallow)
+Target SDK Version: 28 (Android 9.0 Pie)
+
+SIGNING INFORMATION
+-------------------
+Note: APK contains encrypted/obfuscated certificate stores (client.p12, client.bks)
+suggesting potential certificate pinning for C2 communication.
+
+================================================================================
+                       PERMISSIONS ANALYSIS
+================================================================================
+
++----------------------------------------+----------+---------------------------+
+| Permission                             | Risk     | Purpose/Abuse             |
++----------------------------------------+----------+---------------------------+
+| android.permission.INTERNET            | HIGH     | C2 communication, mining  |
+| android.permission.ACCESS_NETWORK_STATE| MEDIUM   | Network reconnaissance    |
+| android.permission.REQUEST_INSTALL_    | CRITICAL | Silent APK installation   |
+|   PACKAGES                             |          | (Dropper functionality)   |
+| android.permission.QUERY_ALL_PACKAGES  | HIGH     | App enumeration/targeting |
+| android.permission.FOREGROUND_SERVICE  | HIGH     | Persistent background ops |
+| android.permission.FOREGROUND_SERVICE_ | HIGH     | Mining service persistence|
+|   MEDIA_PLAYBACK                       |          |                           |
+| android.permission.WAKE_LOCK           | HIGH     | Prevent device sleep      |
+| android.permission.RECEIVE_BOOT_       | HIGH     | Auto-start on boot        |
+|   COMPLETED                            |          |                           |
+| android.permission.REQUEST_IGNORE_     | HIGH     | Evade battery optimization|
+|   BATTERY_OPTIMIZATIONS                |          |                           |
+| android.permission.POST_NOTIFICATIONS  | MEDIUM   | Fake system notifications |
+| com.google.android.c2dm.permission.    | HIGH     | Firebase C2 commands      |
+|   RECEIVE                              |          |                           |
+| com.NWilfxj.FxKDr.DYNAMIC_RECEIVER_    | LOW      | Dynamic receiver control  |
+|   NOT_EXPORTED_PERMISSION              |          |                           |
++----------------------------------------+----------+---------------------------+
+
+PERMISSION RISK ASSESSMENT:
+---------------------------
+The combination of REQUEST_INSTALL_PACKAGES + QUERY_ALL_PACKAGES +
+RECEIVE_BOOT_COMPLETED + FOREGROUND_SERVICE creates a highly dangerous attack
+surface enabling silent malware distribution and persistence.
+
+================================================================================
+                       MALICIOUS BEHAVIORS
+================================================================================
+
+1. IDENTITY DECEPTION / MASQUERADING
+------------------------------------
+   • Disguises as "Axis Cards" (legitimate Axis Bank India app)
+   • Contains FakeActivity with launcher alias "Play Store"
+   • Can dynamically change app icon to appear as Google Play Store
+   • Uses fake notification: "Google Play System Update"
+
+   Technical Evidence:
+   - MainAliasActivity (label="Axis Cards", icon=@mipmap/ic_launcher)
+   - FakeActivity activity-alias (label="Play Store", icon=@mipmap/fake_launcher)
+   - Notification title: "Google Play System Update"
+
+2. DROPPER / DOWNLOADER FUNCTIONALITY
+-------------------------------------
+   • Downloads additional malicious APKs from remote servers
+   • Silently installs packages using REQUEST_INSTALL_PACKAGES
+   • InstallReceiver handles PACKAGE_ADDED broadcasts
+   • Multiple payload URLs with fallback mechanisms
+
+   Technical Evidence:
+   - Uses PackageInstaller API for silent installation
+   - InstallReceiver monitors package installation results
+   - Multiple download URLs for payload retrieval
+
+3. CRYPTOCURRENCY MINING
+------------------------
+   • Contains mining components in com.example.fcmexpr.miner package
+   • Connects to mining pool at pool.uasecurity.org:9000
+   • Downloads architecture-specific miner binaries (x86, ARM, etc.)
+   • Uses device CPU/resources for unauthorized mining
+
+   Technical Evidence:
+   - Mining pool connection: pool.uasecurity.org:9000
+   - Binary downloads: /libxmrig-x86.so, /libxmrig-arm64-v8a.so, etc.
+   - Socket connections for Stratum mining protocol
+
+4. AGGRESSIVE PERSISTENCE MECHANISMS
+------------------------------------
+   • BOOT_COMPLETED receiver for auto-start
+   • Foreground service with fake notification
+   • Silent audio playback to prevent service killing
+   • WakeLock to prevent device sleep
+   • JobScheduler tasks every 5 seconds and 1 minute
+   • Battery optimization bypass
+
+   Technical Evidence:
+   - KeepAliveReceiver triggered on BOOT_COMPLETED
+   - KeepAliveServiceMediaPlayback plays silent audio loop
+   - MediaPlayer loop with silent audio asset
+   - WakeLock acquisition (PARTIAL_WAKE_LOCK)
+   - AlarmManager scheduled tasks at frequent intervals
+
+5. COMMAND & CONTROL INFRASTRUCTURE
+-----------------------------------
+   • Primary C2: http://api.uasecurity.org:8088
+   • Secondary C2: https://aptabase.uasecurity.org
+   • Data exfiltration endpoint: /logging/try_uploading
+   • Firebase Cloud Messaging for remote commands
+   • Multiple fallback URLs via GitHub and Cloudflare
+
+   Technical Evidence:
+   - WebView loads: http://api.uasecurity.org:8088/ads.html
+   - Upload endpoint: https://aptabase.uasecurity.org:8443/logging/try_uploading
+   - FirebaseMessagingKeepAliveService for FCM commands
+   - GitHub fallback: github.com/backend-url-provider/access/
+
+6. CODE OBFUSCATION
+-------------------
+   • Heavy Unicode string obfuscation using Arabic Extended-A characters
+   • Hash-based switch statements for control flow obfuscation
+   • XOR operations on hashCode() values
+   • State machine patterns to obscure execution flow
+
+   Technical Evidence:
+   - Strings like "ۙۧ۠ۙۢ۫۫ۤۗۢۡۡۘۙۜۖۘۧۥۦۤۢۦۘ۬ۡۤۢۖۦۘۛۤۙۧۜۗۡ۫ۘ۬ۛۧۧۦۦۘۧۗۧۚۤۘ"
+   - switch ((((str.hashCode() ^ 240) ^ 247) ^ 617) ^ 1093523311)
+   - Nested while(true) loops with switch statements
+
+7. ENCRYPTED PAYLOADS
+---------------------
+   • Multiple encrypted asset files with randomized names
+   • Certificate stores for potential mutual TLS authentication
+   • Obfuscated native library references
+
+   Technical Evidence:
+   - Assets: 0xyTKD (814KB), 1dxggcSw (476KB), aBUCgNonzZj (4.4MB)
+   - Assets: aeiHnnGGEO (3.5MB), dqNPdpwoAuWzY (4.6MB)
+   - Certificate files: client.p12, client.bks
+
+================================================================================
+                         NETWORK INDICATORS OF COMPROMISE
+================================================================================
+
+C2 SERVERS
+----------
+Domain: uasecurity.org
+  • http://api.uasecurity.org:8088/ads.html          [Primary C2/WebView]
+  • https://aptabase.uasecurity.org                  [Secondary C2]
+  • https://aptabase.uasecurity.org:8443/logging/try_uploading [Data Exfil]
+  • pool.uasecurity.org:9000                         [Mining Pool]
+  • https://uasecurity.org/                          [Base Domain]
+
+PAYLOAD DELIVERY
+----------------
+  • https://accessor.pages.dev/                      [Cloudflare Pages CDN]
+  • https://github.com/backend-url-provider/access/raw/refs/heads/main/
+                                                     [GitHub Payload Host]
+
+MINING INFRASTRUCTURE
+---------------------
+  • pool.uasecurity.org:9000                         [Stratum Mining Pool]
+
+USER-AGENT STRINGS
+------------------
+  • "Android {VERSION}"
+  • Custom WebView user agents
+
+PORTS
+-----
+  • 8088 (HTTP C2)
+  • 8443 (HTTPS Data Exfiltration)
+  • 9000 (Mining Pool Stratum)
+
+================================================================================
+                      FILE / PAYLOAD INDICATORS OF COMPROMISE
+================================================================================
+
+PACKAGE IDENTIFIERS
+-------------------
+  • com.NWilfxj.FxKDr                               [Main Package]
+  • com.example.fcmexpr                             [Internal Package]
+  • com.example.fcmexpr.keepalive                   [Persistence Package]
+  • com.example.fcmexpr.miner                       [Mining Package]
+
+ENCRYPTED ASSETS (Potential Payloads)
+-------------------------------------
+  • assets/0xyTKD                    (814,864 bytes)
+  • assets/1dxggcSw                  (476,112 bytes)
+  • assets/aBUCgNonzZj               (4,413,888 bytes)
+  • assets/aeiHnnGGEO                (3,495,056 bytes)
+  • assets/dqNPdpwoAuWzY             (4,626,368 bytes)
+  • assets/client.p12                [Certificate Store]
+  • assets/client.bks                [BouncyCastle KeyStore]
+
+MINER BINARY REFERENCES
+-----------------------
+  • libxmrig-x86.so
+  • libxmrig-x86_64.so
+  • libxmrig-armeabi-v7a.so
+  • libxmrig-arm64-v8a.so
+
+CLASS INDICATORS
+----------------
+  • com.example.fcmexpr.MainActivity
+  • com.example.fcmexpr.FakeActivity
+  • com.example.fcmexpr.MainAliasActivity
+  • com.example.fcmexpr.InstallReceiver
+  • com.example.fcmexpr.keepalive.KeepAliveReceiver
+  • com.example.fcmexpr.keepalive.KeepAliveServiceMediaPlayback
+  • com.example.fcmexpr.keepalive.KeepAliveJobService
+  • com.example.fcmexpr.keepalive.FirebaseMessagingKeepAliveService
+  • com.example.fcmexpr.keepalive.QGpgwbpMfhrhur5l      [Obfuscated Helper]
+  • com.example.fcmexpr.keepalive.yDmQ0Ws1y4xHKrqZ      [Obfuscated Helper]
+  • com.example.fcmexpr.keepalive.aFe4r1kopdp1REKA      [Service Starter]
+  • com.example.fcmexpr.miner.X0xgUur7S5n74uuu          [Miner Component]
+
+BROADCAST RECEIVERS
+-------------------
+  • android.intent.action.BOOT_COMPLETED
+  • android.intent.action.PACKAGE_ADDED
+  • com.google.firebase.MESSAGING_EVENT
+
+================================================================================
+                            ATTRIBUTION
+================================================================================
+
+THREAT ACTOR INDICATORS
+-----------------------
+Infrastructure Owner: Unknown (uasecurity.org domain)
+Campaign Focus: Indian Banking Customers (Axis Bank impersonation)
+Development Pattern: Sophisticated multi-stage malware
+
+LINGUISTIC/REGIONAL INDICATORS
+------------------------------
+  • Target: Axis Bank customers (India)
+  • Application label: "Axis Cards"
+  • Infrastructure domain suggests ironic "UA Security" branding
+
+TECHNICAL SOPHISTICATION
+------------------------
+  • Advanced obfuscation techniques
+  • Multi-architecture native binary support
+  • Certificate pinning implementation
+  • Multiple fallback C2 mechanisms
+  • Firebase integration for remote control
+  • Sophisticated persistence mechanisms
+
+CAMPAIGN CHARACTERISTICS
+------------------------
+  • Financial motivation (banking trojan + cryptominer)
+  • Long-term persistence focus
+  • Modular architecture (dropper capability)
+  • Version: 4.1-2025.4.21-42-44 (suggests active development)
+
+================================================================================
+                      YARA / DETECTION SUGGESTIONS
+================================================================================
+
+rule AxisCards_BankingTrojan_Dropper {
+    meta:
+        description = "Detects Axis Cards banking trojan/cryptominer hybrid"
+        author = "Forensic Analysis"
+        date = "2026-01-19"
+        hash = "c565a9cc689f40632b08e77554af70f686f396a8d47056d3e76f57fddea6e920"
+
+    strings:
+        // Package identifiers
+        $pkg1 = "com.NWilfxj.FxKDr"
+        $pkg2 = "com.example.fcmexpr"
+
+        // C2 Infrastructure
+        $c2_1 = "uasecurity.org" nocase
+        $c2_2 = "api.uasecurity.org" nocase
+        $c2_3 = "aptabase.uasecurity.org" nocase
+        $c2_4 = "pool.uasecurity.org" nocase
+        $c2_5 = "accessor.pages.dev" nocase
+        $c2_6 = "backend-url-provider" nocase
+
+        // Class names
+        $class1 = "KeepAliveServiceMediaPlayback"
+        $class2 = "KeepAliveReceiver"
+        $class3 = "FirebaseMessagingKeepAliveService"
+        $class4 = "FakeActivity"
+        $class5 = "InstallReceiver"
+
+        // Mining indicators
+        $miner1 = "libxmrig"
+        $miner2 = "pool.uasecurity.org:9000"
+
+        // Fake notification
+        $fake1 = "Google Play System Update"
+        $fake2 = "Play Store"
+
+        // Obfuscation patterns (Unicode)
+        $obf1 = { DB 99 DB A7 DB A0 DB 99 DB A2 DB AB }
+
+    condition:
+        uint32(0) == 0x04034B50 and  // ZIP/APK magic
+        (
+            ($pkg1 or $pkg2) or
+            (2 of ($c2_*)) or
+            (3 of ($class*)) or
+            (any of ($miner*)) or
+            (any of ($fake*) and any of ($class*))
+        )
+}
+
+rule AxisCards_C2_Domain {
+    meta:
+        description = "Network IoC for Axis Cards malware C2"
+
+    strings:
+        $d1 = "uasecurity.org"
+        $d2 = "api.uasecurity.org"
+        $d3 = "aptabase.uasecurity.org"
+        $d4 = "pool.uasecurity.org"
+
+    condition:
+        any of them
+}
+
+rule Android_KeepAlive_Persistence {
+    meta:
+        description = "Detects aggressive Android persistence mechanisms"
+
+    strings:
+        $s1 = "KeepAliveServiceMediaPlayback"
+        $s2 = "PARTIAL_WAKE_LOCK"
+        $s3 = "BOOT_COMPLETED"
+        $s4 = "setLooping"
+        $s5 = "startForeground"
+
+    condition:
+        4 of them
+}
+
+================================================================================
+                      SNORT/SURICATA RULES
+================================================================================
+
+# Axis Cards C2 Communication Detection
+alert http $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"MALWARE Axis Cards Banking Trojan C2 Communication";
+    content:"uasecurity.org"; http_host;
+    classtype:trojan-activity;
+    sid:1000001; rev:1;
+)
+
+alert tcp $HOME_NET any -> $EXTERNAL_NET 9000 (
+    msg:"MALWARE Axis Cards Cryptominer Pool Connection";
+    content:"pool.uasecurity.org";
+    classtype:trojan-activity;
+    sid:1000002; rev:1;
+)
+
+alert http $HOME_NET any -> $EXTERNAL_NET any (
+    msg:"MALWARE Axis Cards Data Exfiltration";
+    content:"aptabase.uasecurity.org"; http_host;
+    content:"/logging/try_uploading"; http_uri;
+    classtype:trojan-activity;
+    sid:1000003; rev:1;
+)
+
+================================================================================
+                         RECOMMENDATIONS
+================================================================================
+
+IMMEDIATE ACTIONS
+-----------------
+1. Block all traffic to/from uasecurity.org and subdomains
+2. Block accessor.pages.dev at network perimeter
+3. Monitor for connections to port 9000 (mining pool)
+4. Search for package name "com.NWilfxj.FxKDr" on managed devices
+5. Alert users about fake "Axis Cards" applications
+
+DETECTION DEPLOYMENT
+--------------------
+1. Deploy YARA rules to endpoint protection systems
+2. Implement Snort/Suricata rules at network perimeter
+3. Add IoCs to SIEM correlation rules
+4. Monitor for REQUEST_INSTALL_PACKAGES abuse
+
+INCIDENT RESPONSE
+-----------------
+If detected on a device:
+1. Isolate device from network immediately
+2. Do NOT attempt to uninstall (may trigger data destruction)
+3. Capture forensic image before remediation
+4. Factory reset after forensic capture
+5. Change all credentials used on the device
+6. Monitor associated accounts for unauthorized activity
+
+================================================================================
+                            APPENDIX A
+                    DECOMPILED CODE EXCERPTS
+================================================================================
+
+A.1 MAIN ACTIVITY C2 LOADING (MainActivity.java)
+------------------------------------------------
+The MainActivity loads a WebView connecting to the C2 server:
+
+    webView.loadUrl("http://api.uasecurity.org:8088/ads.html", map);
+
+The WebView has JavaScript enabled and can execute commands received
+from the C2 server.
+
+A.2 KEEP ALIVE MECHANISM (KeepAliveServiceMediaPlayback.java)
+-------------------------------------------------------------
+Persistence achieved through silent audio playback:
+
+    MediaPlayer mediaPlayer = new MediaPlayer();
+    mediaPlayer.setLooping(true);
+    // Plays silent audio to prevent service termination
+
+Fake notification displayed:
+    Title: "Google Play System Update"
+
+Scheduled tasks:
+    - AlarmManager: Every 5 seconds
+    - AlarmManager: Every 1 minute
+
+A.3 OBFUSCATION PATTERN (KeepAliveReceiver.java)
+------------------------------------------------
+Control flow obfuscation using Unicode strings and hash operations:
+
+    String str = "ۙۧ۠ۙۢ۫۫ۤۗۢۡۡۘۙۜۖۘۧۥۦۤۢۦۘ۬ۡۤۢۖۦۘۛۤۙۧۜۗۡ۫ۘ۬ۛۧۧۦۦۘۧۗۧۚۤۘ";
+    while (true) {
+        switch ((((str.hashCode() ^ 240) ^ 247) ^ 617) ^ 1093523311) {
+            case -1285411144:
+                // Execute action A
+                str = "next_state_string";
+                break;
+            // ... more cases
+        }
+    }
+
+================================================================================
+                            APPENDIX B
+                    COMPLETE NETWORK IoC LIST
+================================================================================
+
+DOMAINS
+-------
+uasecurity.org
+api.uasecurity.org
+aptabase.uasecurity.org
+pool.uasecurity.org
+accessor.pages.dev
+github.com/backend-url-provider
+
+URLS
+----
+http://api.uasecurity.org:8088/ads.html
+https://aptabase.uasecurity.org
+https://aptabase.uasecurity.org:8443/logging/try_uploading
+https://accessor.pages.dev/
+https://github.com/backend-url-provider/access/raw/refs/heads/main/
+https://uasecurity.org/
+
+IP ADDRESSES
+------------
+[Requires DNS resolution of above domains for current IP addresses]
+
+PORTS
+-----
+8088/tcp  - HTTP C2
+8443/tcp  - HTTPS Data Exfiltration
+9000/tcp  - Mining Pool (Stratum)
+
+================================================================================
+                            APPENDIX C
+                      FILE HASH INVENTORY
+================================================================================
+
+Primary APK:
+SHA-256: c565a9cc689f40632b08e77554af70f686f396a8d47056d3e76f57fddea6e920
+
+Embedded Assets (require extraction for individual hashing):
+- assets/0xyTKD
+- assets/1dxggcSw
+- assets/aBUCgNonzZj
+- assets/aeiHnnGGEO
+- assets/dqNPdpwoAuWzY
+- assets/client.p12
+- assets/client.bks
+
+================================================================================
+                         END OF REPORT
+================================================================================
+
+Report Classification: CONFIDENTIAL - MALWARE ANALYSIS
+Distribution: Security Operations, Incident Response Teams
+Retention: Indefinite (Active Threat)
+
+================================================================================

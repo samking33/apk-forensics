@@ -26,6 +26,12 @@ except ImportError:
         return ["APK forensics in progress..."]
 
 try:
+    from pdf_generator import convert_report_to_pdf
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
+try:
     import pyfiglet
     from termcolor import colored
 except ImportError:
@@ -453,12 +459,17 @@ class APKForensics:
         color_print(f"Report saved to: {report_path}", "green")
         print("=" * 80 + "\n")
     
-    def run(self, apk_path: Optional[str] = None, quiet: bool = False, no_color: bool = False):
+    def run(self, apk_path: Optional[str] = None, quiet: bool = False, no_color: bool = False, export_pdf: bool = False):
         """Main execution method."""
         try:
             self.display_banner(quiet=quiet, no_color=no_color)
             
             if not self.check_dependencies():
+                sys.exit(1)
+            
+            if export_pdf and not PDF_AVAILABLE:
+                msg = "PDF export requires reportlab. Install with: pip install reportlab"
+                print(colored(msg, "red") if not no_color else msg)
                 sys.exit(1)
             
             if not apk_path:
@@ -478,10 +489,25 @@ class APKForensics:
             print(colored(msg, "yellow") if not no_color else msg)
             
             reports = []
+            pdf_reports = []
             for apk in apks:
                 try:
                     report_path = self.analyze_apk_with_claude(apk, no_color=no_color)
                     reports.append(report_path)
+                    
+                    # Generate PDF if requested
+                    if export_pdf:
+                        try:
+                            pdf_path = convert_report_to_pdf(report_path)
+                            pdf_reports.append(pdf_path)
+                            msg = f"\n📝 PDF report generated: {pdf_path}"
+                            print(colored(msg, "green") if not no_color else msg)
+                            self.logger.info(f"PDF report generated: {pdf_path}")
+                        except Exception as pdf_error:
+                            error_msg = f"Warning: PDF generation failed: {str(pdf_error)}"
+                            print(colored(error_msg, "yellow") if not no_color else error_msg)
+                            self.logger.warning(f"PDF generation failed: {pdf_error}")
+                    
                 except Exception as e:
                     error_msg = f"Error analyzing {os.path.basename(apk)}: {str(e)}"
                     print(colored(error_msg, "red") if not no_color else error_msg)
@@ -497,6 +523,16 @@ class APKForensics:
                 
                 for report_path in reports:
                     self.display_report(report_path, no_color=no_color)
+                
+                # Display PDF summary
+                if pdf_reports:
+                    print("\n" + "=" * 80)
+                    msg = f"📊 PDF REPORTS GENERATED ({len(pdf_reports)})"
+                    print(colored(msg, "cyan", attrs=["bold"]) if not no_color else msg)
+                    print("=" * 80)
+                    for pdf_path in pdf_reports:
+                        print(colored(f"  ✓ {pdf_path}", "green") if not no_color else f"  ✓ {pdf_path}")
+                    print("=" * 80 + "\n")
             else:
                 msg = "No reports generated. Analysis failed."
                 print(colored(msg, "red") if not no_color else msg)
@@ -534,6 +570,7 @@ Examples:
     
     parser.add_argument('--apk', type=str, help='Path to APK file or directory')
     parser.add_argument('--config', type=str, default='config.yaml', help='Path to configuration file')
+    parser.add_argument('--pdf', action='store_true', help='Generate PDF report in addition to text report')
     parser.add_argument('--quiet', action='store_true', help='Suppress banner and progress messages')
     parser.add_argument('--verbose', action='store_true', help='Enable debug logging')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output')
@@ -546,7 +583,7 @@ Examples:
         logging.getLogger().setLevel(logging.DEBUG)
     
     app = APKForensics(config_path=args.config)
-    app.run(apk_path=args.apk, quiet=args.quiet, no_color=args.no_color)
+    app.run(apk_path=args.apk, quiet=args.quiet, no_color=args.no_color, export_pdf=args.pdf)
 
 
 if __name__ == "__main__":

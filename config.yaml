@@ -1,6 +1,6 @@
 claude:
   model: claude-3-5-sonnet-20241022
-  timeout: 600
+  timeout: 1200
   auto_approve: true
 
 output:

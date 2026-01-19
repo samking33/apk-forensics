@@ -1,0 +1,525 @@
+================================================================================
+                    APK FORENSIC ANALYSIS REPORT
+                    fSOC Mobile Malware Intelligence
+================================================================================
+
+REPORT DATE: 2026-01-19
+ANALYST: fSOC Forensics Division
+CLASSIFICATION: MALICIOUS - HIGH RISK
+ANALYSIS TYPE: Manual Forensic Examination (apktool, jadx, strings, grep)
+
+================================================================================
+                         EXECUTIVE SUMMARY
+================================================================================
+
+MALWARE TYPE: Trojanized Streaming Application / Potentially Unwanted Program (PUP)
+RISK LEVEL: HIGH
+THREAT CATEGORY: Pirated Media App with Anti-Analysis & Security Bypass Capabilities
+
+The analyzed APK "Pikashow" is a pirated streaming application that has been
+modified to bypass signature verification and security controls. It exhibits
+multiple characteristics of a Potentially Unwanted Program (PUP) with
+trojanized components including:
+
+1. APK Signature Killer - Bypasses Android's signature verification
+2. Xposed Framework Integration - Runtime hooking capabilities
+3. Root/Emulator Detection - Anti-analysis evasion techniques
+4. SSL Certificate Bypass - Man-in-the-Middle vulnerability
+5. Excessive Permissions - Data harvesting potential
+6. Remote Configuration - C2-like update mechanism via Firebase
+7. Native Code Obfuscation - Hidden functionality in libpika.so
+
+This application poses significant security risks including:
+- Potential for remote code execution via app updates
+- Man-in-the-Middle attacks due to SSL bypass
+- Privacy violations through excessive data collection
+- Device compromise through hooking frameworks
+
+================================================================================
+                           METADATA
+================================================================================
+
+FILE INFORMATION
+--------------------------------------------------------------------------------
+File Name:          Pikashow.apk
+File Size:          17,179,897 bytes (16.4 MB)
+File Type:          Zip archive (APK)
+SHA-256 Hash:       39eeb95059edadedd820a58ee53599d93e21b8f683521df26369dd64fa7285f2
+
+PACKAGE INFORMATION
+--------------------------------------------------------------------------------
+Package Name:       com.offshore.pikachu
+Application Label:  Pikashow
+Version Code:       82
+Version Name:       10.8.2
+Min SDK Version:    21 (Android 5.0 Lollipop)
+Target SDK Version: 29 (Android 10)
+Compile SDK:        31 (Android 12)
+
+SIGNING CERTIFICATE
+--------------------------------------------------------------------------------
+Subject:            CN=Sam Jeo, OU=Android, O=Android, L=UK, ST=London, C=44
+Issuer:             CN=Sam Jeo, OU=Android, O=Android, L=UK, ST=London, C=44
+Valid From:         2021-05-22
+Valid Until:        2046-05-16
+Signature Type:     RSA
+
+NOTE: Certificate appears to be self-signed with suspicious/generic information.
+The certificate is NOT associated with any legitimate developer.
+
+================================================================================
+                      PERMISSIONS ANALYSIS
+================================================================================
+
+CRITICAL RISK PERMISSIONS
+--------------------------------------------------------------------------------
+Permission                              | Risk Assessment
+----------------------------------------|-----------------------------------
+QUERY_ALL_PACKAGES                      | CRITICAL - Enumerate all apps
+REQUEST_INSTALL_PACKAGES                | CRITICAL - Can install APKs
+REQUEST_DELETE_PACKAGES                 | CRITICAL - Can delete apps
+SYSTEM_ALERT_WINDOW                     | CRITICAL - Overlay attacks
+WRITE_SETTINGS                          | CRITICAL - Modify system settings
+RECEIVE_BOOT_COMPLETED                  | HIGH - Persistence mechanism
+
+HIGH RISK PERMISSIONS
+--------------------------------------------------------------------------------
+Permission                              | Risk Assessment
+----------------------------------------|-----------------------------------
+ACCESS_FINE_LOCATION                    | HIGH - GPS location tracking
+READ_EXTERNAL_STORAGE                   | HIGH - Read user files
+WRITE_EXTERNAL_STORAGE                  | HIGH - Modify user files
+INTERNET                                | HIGH - Network communication
+ACCESS_NETWORK_STATE                    | MEDIUM - Network information
+ACCESS_WIFI_STATE                       | MEDIUM - WiFi information
+CHANGE_WIFI_STATE                       | HIGH - WiFi manipulation
+FOREGROUND_SERVICE                      | MEDIUM - Background operations
+WAKE_LOCK                               | MEDIUM - Keep device awake
+VIBRATE                                 | LOW - User notification
+
+VENDOR-SPECIFIC BADGE PERMISSIONS
+--------------------------------------------------------------------------------
+- com.sec.android.provider.badge.permission.READ/WRITE (Samsung)
+- com.htc.launcher.permission.READ_SETTINGS/UPDATE_SHORTCUT (HTC)
+- com.sonyericsson.home.permission.BROADCAST_BADGE (Sony)
+- com.huawei.android.launcher.permission.CHANGE_BADGE (Huawei)
+- com.oppo.launcher.permission.READ_SETTINGS/WRITE_SETTINGS (OPPO)
+
+CLOUD MESSAGING PERMISSIONS
+--------------------------------------------------------------------------------
+- com.google.android.c2dm.permission.RECEIVE
+- com.offshore.pikachu.permission.C2D_MESSAGE
+- com.google.android.gms.permission.AD_ID
+
+================================================================================
+                    MALICIOUS BEHAVIORS ANALYSIS
+================================================================================
+
+1. APK SIGNATURE BYPASS (CRITICAL)
+--------------------------------------------------------------------------------
+Location: bin.mt.apksignaturekillerplus.HookApplication
+          com.bug.load.ProxyApplication
+          com.bug.fuck.R
+          me.weishu.exposed.ExposedApplication
+
+Description:
+The application contains a known malicious component "APK Signature Killer Plus"
+which is designed to bypass Android's signature verification. This allows:
+- Running modified/tampered APKs without signature validation
+- Bypassing Play Protect and security scanners
+- Executing unsigned or incorrectly signed code
+
+Inheritance Chain:
+  App -> ExposedApplication -> HookApplication -> ProxyApplication -> R -> vq0
+
+Evidence:
+  - Package "bin.mt.apksignaturekillerplus" present
+  - Class hierarchy shows hooking framework integration
+  - Multiple "fine2()" methods called during app initialization
+  - Static loading of "pika" native library for runtime manipulation
+
+2. XPOSED FRAMEWORK INTEGRATION (CRITICAL)
+--------------------------------------------------------------------------------
+Location: me.weishu.exposed.ExposedApplication
+          defpackage.tw2, defpackage.cc0
+
+Description:
+Application extends ExposedApplication (VirtualXposed/Exposed framework) which
+provides runtime hooking capabilities without root. This enables:
+- Method interception and modification at runtime
+- Bypassing security checks in other applications
+- Hiding root/Xposed detection from banking apps
+- Dynamic code injection
+
+3. SSL CERTIFICATE BYPASS (HIGH)
+--------------------------------------------------------------------------------
+Location: com.offshore.pikachu.view.Embed$Wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww
+
+Evidence:
+```java
+@SuppressLint({"WebViewClientOnReceivedSslError"})
+public void onReceivedSslError(WebView webView, SslErrorHandler sslErrorHandler,
+                               SslError sslError) {
+    sslErrorHandler.proceed();  // VULNERABLE: Accepts all SSL certificates
+}
+```
+
+Impact:
+- Vulnerable to Man-in-the-Middle attacks
+- All HTTPS traffic can be intercepted
+- User credentials and data can be stolen
+- Streaming content can be modified/injected
+
+4. WEBVIEW SECURITY BYPASS (HIGH)
+--------------------------------------------------------------------------------
+Location: com.offshore.pikachu.view.Embed
+
+Vulnerable Settings:
+```java
+setAllowFileAccessFromFileURLs(true)   // VULNERABLE
+setAllowUniversalAccessFromFileURLs(true)  // VULNERABLE
+setAllowContentAccess(true)  // VULNERABLE
+setJavaScriptEnabled(true)
+```
+
+Impact:
+- Cross-origin attacks possible
+- Local file system access via WebView
+- Potential for data exfiltration
+
+5. ROOT/EMULATOR DETECTION - ANTI-ANALYSIS (MEDIUM)
+--------------------------------------------------------------------------------
+Location: defpackage.xj
+
+Detection Methods:
+- Check for test-keys in Build.TAGS
+- Check for /system/app/Superuser.apk
+- Check for /system/xbin/su
+- Check for emulator (goldfish, ranchu hardware)
+- Check for debugger attachment
+
+Evidence:
+```java
+public static boolean Wwwwwwwwww() {  // isRooted check
+    if (str.contains("test-keys")) return true;
+    if (new File("/system/app/Superuser.apk").exists()) return true;
+    return new File("/system/xbin/su").exists();
+}
+
+public static boolean Wwwwwwwwwww() {  // isEmulator check
+    if (Build.PRODUCT.contains("sdk")) return true;
+    String hardware = Build.HARDWARE;
+    return hardware.contains("goldfish") || hardware.contains("ranchu");
+}
+```
+
+6. CERTIFICATE PINNING BYPASS DETECTION (MEDIUM)
+--------------------------------------------------------------------------------
+Location: defpackage.Illllllllllllllllll, com.offshore.pikachu.view.Splash
+
+The application checks for known security/analysis tools by examining
+installed system certificates and comparing against a blocklist.
+If detected, the application terminates.
+
+7. REMOTE CONFIGURATION / C2 CAPABILITY (HIGH)
+--------------------------------------------------------------------------------
+Location: Firebase Remote Config integration
+          defpackage.nj0, defpackage.ep3
+
+The application uses Firebase Remote Config to dynamically retrieve:
+- Streaming server URLs
+- Update URLs
+- Configuration parameters
+- Feature flags
+
+This provides C2-like capabilities for:
+- Remotely changing app behavior
+- Pushing malicious updates
+- Changing C2 infrastructure
+- Disabling security features
+
+8. NATIVE CODE OBFUSCATION (HIGH)
+--------------------------------------------------------------------------------
+Location: lib/*/libpika.so
+
+JNI Native Methods:
+- Java_com_google_android_Google_TestYou
+- Java_com_google_android_Google_action
+- Java_com_google_android_Google_adventure
+- Java_com_google_android_Google_drama
+- Java_com_google_android_Google_family
+- Java_com_google_android_Google_pikashow
+- Java_com_google_android_Google_returnD
+- Java_com_google_android_Google_stringFromJNI
+- Java_com_google_android_Google_update
+- Java_com_google_android_Google_web
+- Java_com_google_android_Google_web2
+- Java_com_google_android_Google_yt
+
+The class "com.google.android.Google" masquerades as a legitimate Google class
+but loads the native "pika" library. This suggests:
+- URLs/endpoints stored in native code to evade detection
+- Potential additional hidden functionality
+- String encryption/decryption routines
+
+9. BOOT PERSISTENCE (MEDIUM)
+--------------------------------------------------------------------------------
+Location: AndroidManifest.xml
+
+Receivers:
+```xml
+<receiver android:name="com.onesignal.BootUpReceiver">
+    <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED"/>
+        <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+    </intent-filter>
+</receiver>
+```
+
+The application registers for BOOT_COMPLETED, allowing it to:
+- Start automatically on device boot
+- Maintain persistence
+- Resume background operations
+
+10. HEAVY CODE OBFUSCATION (MEDIUM)
+--------------------------------------------------------------------------------
+Obfuscation Techniques Observed:
+- Class names: Wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww, Illllllllllllllllll, Kkkkkkkkkkkkkk
+- Method names: Similar obfuscation patterns
+- String encryption: defpackage.d10.Wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww()
+- Control flow obfuscation
+- ProGuard/R8 optimization
+
+================================================================================
+                    NETWORK INFRASTRUCTURE & IOCs
+================================================================================
+
+FIREBASE INFRASTRUCTURE
+--------------------------------------------------------------------------------
+Firebase Database URL:   https://offshore1play.firebaseio.com
+Firebase Storage:        offshore1play.appspot.com
+Google App ID:          1:496797426897:android:1430af6665988f717c91f0
+GCM Sender ID:          496797426897
+Google API Key:         AIzaSyAprP6BLafKpKrmCu5kOv_Ttky0oYS3-Hs
+OAuth Client ID:        496797426897-k3gg7q2nbq0pa93v65fgul7dv69jbome.apps.googleusercontent.com
+
+STREAMING INFRASTRUCTURE
+--------------------------------------------------------------------------------
+Domain:                  awsindstream.com (referenced in code)
+                        Dynamic URLs retrieved via Firebase Remote Config
+
+PUSH NOTIFICATION INFRASTRUCTURE
+--------------------------------------------------------------------------------
+OneSignal App ID:        8351eecd-1a83-96b7-6616a4282c72
+                        (Note: Truncated - likely corrupted in manifest)
+
+PACKAGE QUERIES (Inter-App Communication)
+--------------------------------------------------------------------------------
+- org.telegram.messenger (Telegram)
+- com.dv.adm (Advanced Download Manager)
+- idm.internet.download.manager
+- idm.internet.download.manager.plus
+- idm.internet.download.manager.lite
+
+================================================================================
+                      FILE/PAYLOAD IOCs
+================================================================================
+
+SUSPICIOUS NATIVE LIBRARIES
+--------------------------------------------------------------------------------
+lib/*/libpika.so         - Custom native library with obfuscated functions
+lib/*/libffmpeg.so       - FFmpeg (legitimate, for video playback)
+lib/*/libavcodec.so      - FFmpeg codec library
+lib/*/libavutil.so       - FFmpeg utility library
+lib/*/libavresample.so   - FFmpeg resampling library
+lib/*/librtmp-jni.so     - RTMP streaming support
+lib/*/libjingle_peerconnection_so.so - WebRTC (Google)
+lib/*/libflacJNI.so      - FLAC audio decoder
+lib/*/libopusV2JNI.so    - Opus audio codec
+
+SUSPICIOUS PACKAGES
+--------------------------------------------------------------------------------
+bin.mt.apksignaturekillerplus  - Signature bypass tool
+com.bug.load                   - Proxy/hooking loader
+com.bug.fuck                   - Offensive package name (R class)
+me.weishu.exposed              - Xposed/VirtualXposed framework
+defpackage.*                   - Obfuscated classes (900+ files)
+
+DEX FILES
+--------------------------------------------------------------------------------
+classes.dex              - Primary DEX file
+classes2.dex             - Secondary DEX file (multidex)
+
+================================================================================
+                        ATTRIBUTION
+================================================================================
+
+DEVELOPER IDENTITY
+--------------------------------------------------------------------------------
+Certificate CN:          Sam Jeo
+Location Claimed:        London, UK
+Organization:            Android (generic placeholder)
+
+ATTRIBUTION CONFIDENCE: LOW
+
+The developer identity appears to be fabricated or pseudonymous.
+"Sam Jeo" is likely a fake identity. The certificate information
+uses generic placeholders common in pirated/malicious applications.
+
+ASSOCIATED INFRASTRUCTURE
+--------------------------------------------------------------------------------
+Project ID:              offshore1play
+                        (Suggests offshore/piracy-related operations)
+
+THIRD-PARTY INTEGRATIONS
+--------------------------------------------------------------------------------
+- OneSignal (Push notifications)
+- Firebase (Remote config, analytics, crashlytics)
+- Google Cast (Chromecast support)
+- ExoPlayer (Video playback)
+- Glide (Image loading)
+- OkHttp (Networking)
+
+================================================================================
+                   CRYPTOCURRENCY & FINANCIAL CHECK
+================================================================================
+
+Wallet Addresses Found:         NONE
+Mining Configuration Found:     NONE
+Banking Overlay Targeting:      NONE DETECTED
+Financial Fraud Indicators:     NONE DETECTED
+
+Note: While no direct cryptocurrency or financial fraud components were found,
+the application's capability to install arbitrary APKs and receive remote
+configuration updates means such functionality could be deployed at any time.
+
+================================================================================
+                    YARA / DETECTION SIGNATURES
+================================================================================
+
+rule Pikashow_APK_Signature_Killer {
+    meta:
+        description = "Detects Pikashow APK with signature bypass"
+        author = "fSOC Forensics"
+        date = "2026-01-19"
+        hash = "39eeb95059edadedd820a58ee53599d93e21b8f683521df26369dd64fa7285f2"
+
+    strings:
+        $pkg = "com.offshore.pikachu"
+        $sig_killer = "bin.mt.apksignaturekillerplus"
+        $exposed = "me.weishu.exposed"
+        $bug_fuck = "com.bug.fuck"
+        $bug_load = "com.bug.load"
+        $native = "libpika.so"
+        $firebase = "offshore1play.firebaseio.com"
+
+    condition:
+        uint32(0) == 0x04034b50 and  // ZIP magic
+        $pkg and
+        2 of ($sig_killer, $exposed, $bug_fuck, $bug_load) and
+        ($native or $firebase)
+}
+
+rule Pikashow_SSL_Bypass {
+    meta:
+        description = "Detects SSL certificate bypass in Pikashow"
+
+    strings:
+        $ssl_bypass = "onReceivedSslError"
+        $proceed = "proceed"
+        $webview = "WebViewClient"
+
+    condition:
+        all of them
+}
+
+================================================================================
+                      RECOMMENDATIONS
+================================================================================
+
+IMMEDIATE ACTIONS
+--------------------------------------------------------------------------------
+1. REMOVE this application immediately from any device
+2. SCAN device for additional malware using reputable AV
+3. CHANGE passwords for any accounts accessed while app was installed
+4. MONITOR accounts for unauthorized activity
+5. REVOKE permissions if app was granted sensitive access
+
+ENTERPRISE ACTIONS
+--------------------------------------------------------------------------------
+1. BLOCK package name: com.offshore.pikachu
+2. BLOCK SHA-256: 39eeb95059edadedd820a58ee53599d93e21b8f683521df26369dd64fa7285f2
+3. BLOCK Firebase endpoints: offshore1play.firebaseio.com
+4. ADD to mobile threat defense (MTD) blocklist
+5. ALERT users who may have installed similar piracy apps
+
+NETWORK INDICATORS TO BLOCK
+--------------------------------------------------------------------------------
+- offshore1play.firebaseio.com
+- offshore1play.appspot.com
+- awsindstream.com
+- Any domains resolved from Firebase Remote Config
+
+IP ADDRESSES IDENTIFIED
+--------------------------------------------------------------------------------
+- 18.162.49.53 (P2P Engine configuration)
+- 129.226.78.157
+- 170.106.200.210
+- 193.112.233.92
+
+URLS EXTRACTED
+--------------------------------------------------------------------------------
+- https://awsindstream.com (Streaming server)
+- https://uptostream.com/api/streaming/source/get?token=&file_code=
+- https://www.dailymotion.com/embed/video/
+- https://rest.opensubtitles.org/search
+- https://api.onesignal.com/
+- https://pro.ip-api.com/json?fields=2181826&key=bfZaACAMusWJuJJ
+
+TELEGRAM/COMMUNICATION CHANNELS
+--------------------------------------------------------------------------------
+- https://rebrand.ly/Pikashow (Website)
+- https://rebrand.ly/Pikashow-channel (Telegram Channel)
+- https://rebrand.ly/Pikashow-private (Private Channel)
+- https://rebrand.ly/Pikashow-help-bot (Support Bot)
+
+API KEYS EXPOSED
+--------------------------------------------------------------------------------
+- Google API Key: AIzaSyAprP6BLafKpKrmCu5kOv_Ttky0oYS3-Hs
+- IP-API Key: bfZaACAMusWJuJJ
+- OneSignal App ID: 8351eecd-1a83-96b7-6616a4282c72
+
+================================================================================
+                         CONCLUSION
+================================================================================
+
+The Pikashow APK (version 10.8.2) is a HIGH-RISK trojanized application that
+masquerades as a legitimate streaming service. While its primary purpose appears
+to be providing pirated media content, the application contains multiple
+dangerous capabilities:
+
+1. Active signature verification bypass enabling tampered code execution
+2. Xposed framework integration for runtime hooking
+3. SSL certificate bypass creating MITM vulnerabilities
+4. Remote configuration capabilities allowing behavior modification
+5. Self-update functionality with APK installation permissions
+6. Extensive anti-analysis techniques
+
+The combination of these capabilities creates a significant threat vector.
+Even if the current payload is primarily focused on piracy, the infrastructure
+is in place for:
+- Credential theft
+- Banking trojan deployment
+- Ransomware delivery
+- Botnet enrollment
+- Cryptocurrency mining
+
+VERDICT: MALICIOUS - DO NOT INSTALL OR USE
+
+================================================================================
+                    END OF FORENSIC REPORT
+================================================================================
+Report Generated: 2026-01-19
+Analyst: fSOC Mobile Malware Intelligence Division
+Classification: TLP:WHITE - Unrestricted Distribution
+================================================================================

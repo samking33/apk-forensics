@@ -1,0 +1,19 @@
+claude:
+  model: claude-3-5-sonnet-20241022
+  timeout: 600
+  auto_approve: true
+
+output:
+  directory: apk_analysis
+  format: text
+  save_logs: true
+
+logging:
+  level: INFO
+  directory: logs
+  max_size_mb: 100
+  backup_count: 5
+
+forensic_tools:
+  apktool: apktool
+  jadx: jadx

@@ -16,9 +16,10 @@ import shutil
 import time
 from datetime import datetime
 from termcolor import colored
-from __version__ import __version__
 import forensic_facts
 import pdf_generator
+
+__version__ = "1.0.0"
 
 class APKForensics:
     def __init__(self, config_path="config.yaml"):
@@ -77,6 +78,8 @@ class APKForensics:
             else:
                 print(colored(text, color, attrs=attrs or []))
 
+        self.color_print = color_print # Save for use in other methods
+
         color_print("\n" + "=" * 80, "red", ["bold"])
         color_print(ghost_art, "green", ["dark"])
         color_print(fsociety_banner, "red", ["bold"])
@@ -115,16 +118,19 @@ class APKForensics:
 
     def analyze_apk(self, apk_path, verbose=False):
         """Analyze a single APK."""
+        # Use existing color_print if available, otherwise define a local one
+        cprint = getattr(self, 'color_print', lambda t, c, a=None: print(colored(t, c, attrs=a or [])))
+
         if not os.path.exists(apk_path):
             self.logger.error(f"APK not found: {apk_path}")
-            print(colored(f"[-] Error: APK not found: {apk_path}", "red"))
+            cprint(f"[-] Error: APK not found: {apk_path}", "red")
             return
 
         apk_name = os.path.basename(apk_path)
-        print(colored(f"[*] Analyzing: {apk_name}", "cyan"))
+        cprint(f"[*] Analyzing: {apk_name}", "cyan")
 
         # Random fact
-        print(colored(f"[i] Did you know? {forensic_facts.get_random_fact()}", "yellow"))
+        cprint(f"[i] Did you know? {forensic_facts.get_random_fact()}", "yellow")
 
         # Create output dir
         output_dir = self.config.get('output', {}).get('directory', 'apk_analysis')
@@ -136,13 +142,13 @@ class APKForensics:
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
 
-        print(colored("[*] Decompiling APK resources...", "blue"))
+        cprint("[*] Decompiling APK resources...", "blue")
         apktool_cmd = [self.config['forensic_tools']['apktool'], 'd', apk_path, '-o', temp_dir, '-f']
 
         try:
             subprocess.run(apktool_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         except subprocess.CalledProcessError:
-            print(colored("[-] Warning: Apktool failed. Continuing with limited analysis...", "yellow"))
+            cprint("[-] Warning: Apktool failed. Continuing with limited analysis...", "yellow")
 
         # Read Manifest
         manifest_path = os.path.join(temp_dir, "AndroidManifest.xml")
@@ -179,7 +185,7 @@ Please generate a detailed forensic report with the following sections:
 Format the output as a professional text report. Use ASCII art headers if appropriate.
 """
 
-        print(colored("[*] transmitting data to fSOC AI mainframe (Claude)...", "magenta"))
+        cprint("[*] transmitting data to fSOC AI mainframe (Claude)...", "magenta")
 
         try:
             # Call Claude CLI
@@ -196,7 +202,7 @@ Format the output as a professional text report. Use ASCII art headers if approp
 
             if process.returncode != 0:
                 self.logger.error(f"Claude analysis failed: {stderr}")
-                print(colored(f"[-] Error during analysis: {stderr}", "red"))
+                cprint(f"[-] Error during analysis: {stderr}", "red")
                 return
 
             report_content = stdout
@@ -206,18 +212,18 @@ Format the output as a professional text report. Use ASCII art headers if approp
             with open(report_file, 'w') as f:
                 f.write(report_content)
 
-            print(colored(f"[+] Report saved: {report_file}", "green"))
+            cprint(f"[+] Report saved: {report_file}", "green")
 
             # Generate PDF
             try:
                 pdf_path = pdf_generator.convert_report_to_pdf(report_file)
-                print(colored(f"[+] PDF Report generated: {pdf_path}", "green"))
+                cprint(f"[+] PDF Report generated: {pdf_path}", "green")
             except Exception as e:
                 self.logger.error(f"PDF generation failed: {e}")
-                print(colored(f"[-] Warning: PDF generation failed: {e}", "yellow"))
+                cprint(f"[-] Warning: PDF generation failed: {e}", "yellow")
 
         except FileNotFoundError:
-             print(colored("[-] Error: Claude CLI not found or not executable.", "red"))
+             cprint("[-] Error: Claude CLI not found or not executable.", "red")
 
     def run(self):
         parser = argparse.ArgumentParser(description="fSOC APK Forensics CLI")
@@ -233,7 +239,7 @@ Format the output as a professional text report. Use ASCII art headers if approp
         self.display_banner(args.quiet, args.no_color)
 
         if not args.apk:
-            print(colored("[-] Error: Please provide an APK path using --apk", "red"))
+            self.color_print("[-] Error: Please provide an APK path using --apk", "red")
             parser.print_help()
             sys.exit(1)
 
@@ -241,14 +247,14 @@ Format the output as a professional text report. Use ASCII art headers if approp
 
         if os.path.isdir(args.apk):
             # Batch mode
-            print(colored(f"[*] Batch mode: Analyzing directory {args.apk}", "cyan"))
+            self.color_print(f"[*] Batch mode: Analyzing directory {args.apk}", "cyan")
             for file in os.listdir(args.apk):
                 if file.endswith(".apk"):
                     self.analyze_apk(os.path.join(args.apk, file), args.verbose)
         else:
             self.analyze_apk(args.apk, args.verbose)
 
-        print(colored("\n[*] Analysis Complete.", "green", attrs=['bold']))
+        self.color_print("\n[*] Analysis Complete.", "green", attrs=['bold'])
 
 def main():
     tool = APKForensics()

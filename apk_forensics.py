@@ -48,6 +48,15 @@ class APKForensics:
 
     def display_banner(self, quiet: bool = False, no_color: bool = False):
         """Display the fSOC APK Forensics ASCII banner."""
+        # Define color_print helper regardless of quiet mode
+        def color_print(text, color, attrs=None):
+            if no_color:
+                print(text)
+            else:
+                print(colored(text, color, attrs=attrs or []))
+
+        self.color_print = color_print
+
         if quiet:
             return
 
@@ -72,30 +81,22 @@ class APKForensics:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         system_info = f"[{platform.system()} {platform.machine()}] | [{timestamp}]"
 
-        def color_print(text, color, attrs=None):
-            if no_color:
-                print(text)
-            else:
-                print(colored(text, color, attrs=attrs or []))
+        self.color_print("\n" + "=" * 80, "red", ["bold"])
+        self.color_print(ghost_art, "green", ["dark"])
+        self.color_print(fsociety_banner, "red", ["bold"])
+        self.color_print(apk_forensics, "green", ["bold"])
+        self.color_print("\n" + "=" * 80, "red", ["bold"])
+        self.color_print(f"{'':>10}{quote}", "cyan")
+        self.color_print("=" * 80, "red", ["bold"])
+        self.color_print(f"{'':>5}MOBILE MALWARE ANALYSIS | THREAT INTELLIGENCE", "yellow")
+        self.color_print(f"{'':>5}{system_info}", "white", ["dark"])
+        self.color_print("=" * 80 + "\n", "red", ["bold"])
 
-        self.color_print = color_print # Save for use in other methods
-
-        color_print("\n" + "=" * 80, "red", ["bold"])
-        color_print(ghost_art, "green", ["dark"])
-        color_print(fsociety_banner, "red", ["bold"])
-        color_print(apk_forensics, "green", ["bold"])
-        color_print("\n" + "=" * 80, "red", ["bold"])
-        color_print(f"{'':>10}{quote}", "cyan")
-        color_print("=" * 80, "red", ["bold"])
-        color_print(f"{'':>5}MOBILE MALWARE ANALYSIS | THREAT INTELLIGENCE", "yellow")
-        color_print(f"{'':>5}{system_info}", "white", ["dark"])
-        color_print("=" * 80 + "\n", "red", ["bold"])
-
-        color_print("[*] Initializing fsociety forensic protocols...", "green")
-        color_print("[*] Loading exploit detection signatures...", "green")
-        color_print("[*] Establishing anonymous analysis environment...", "green")
-        color_print("[+] System compromised. Ready for analysis.\n", "green", ["bold"])
-        color_print("=" * 80, "red", ["bold"])
+        self.color_print("[*] Initializing fsociety forensic protocols...", "green")
+        self.color_print("[*] Loading exploit detection signatures...", "green")
+        self.color_print("[*] Establishing anonymous analysis environment...", "green")
+        self.color_print("[+] System compromised. Ready for analysis.\n", "green", ["bold"])
+        self.color_print("=" * 80, "red", ["bold"])
         print()
 
     def check_dependencies(self):

@@ -107,6 +107,8 @@ class APKForensics:
         self.config = self.load_config(config_path)
         self.setup_logging()
         self.logger = logging.getLogger(__name__)
+        self.skull_animation_stop = None
+        self.skull_animation_thread = None
         
     def load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file."""
@@ -149,41 +151,6 @@ class APKForensics:
         """Display the fSOC APK Forensics ASCII banner."""
         if quiet:
             return
-            
-        skull_art = """
-          ░░░░░░░░░░░░░              
-          ░░░░▒▒▒▒▒▒▒▒▒▒▒▒░░░░          
-        ░░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░░        
-       ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░       
-      ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░      
-     ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░     
-     ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░     
-    ░▒▒▒▒▒███▒▒▒▒▒▒▒▒▒▒▒▒▒███▒▒▒▒▒░    
-    ░▒▒▒▒█████▒▒▒▒▒▒▒▒▒▒▒█████▒▒▒▒░    
-    ░▒▒▒▒█████▒▒▒▒▒▒▒▒▒▒▒█████▒▒▒▒░    
-    ░▒▒▒▒▒███▒▒▒▒▒▒▒▒▒▒▒▒▒███▒▒▒▒▒░    
-    ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░    
-    ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░    
-    ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░    
-     ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░     
-     ░▒▒▒▒▒▒▒▒▒▒▒▒███▒▒▒▒▒▒▒▒▒▒▒▒░     
-     ░▒▒▒▒▒▒▒▒▒▒█████▒▒▒▒▒▒▒▒▒▒▒▒░     
-      ░▒▒▒▒▒▒▒▒▒▒███▒▒▒▒▒▒▒▒▒▒▒▒░      
-      ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░      
-      ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░      
-       ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░       
-       ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░       
-       ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░       
-        ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░        
-        ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░        
-        ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░        
-         ░▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒░         
-         ░▒▒▒▒░░░▒▒▒▒▒░░░▒▒▒▒░         
-         ░▒▒░   ░▒▒▒▒▒░   ░▒▒░         
-        ░▒▒░     ░▒▒▒░     ░▒▒░        
-        ░▒░       ░▒░       ░▒░        
-        ░░         ░         ░░
-    """
         
         fsociety_banner = """
     ███████╗███████╗ ██████╗  ██████╗
@@ -205,23 +172,59 @@ class APKForensics:
             else:
                 print(colored(text, color, attrs=attrs or []))
         
+        # Clear screen and print clean banner
+        print("\033[2J\033[H")  # Clear screen and move to top
+        
         color_print("\n" + "=" * 80, "red", ["bold"])
-        color_print(skull_art, "green", ["dark"])
         color_print(fsociety_banner, "red", ["bold"])
         color_print(apk_forensics, "green", ["bold"])
         color_print("\n" + "=" * 80, "red", ["bold"])
         color_print(f"{'':>10}{quote}", "cyan")
-        color_print("=" * 80, "red", ["bold"])
-        color_print(f"{'':>5}MOBILE MALWARE ANALYSIS | THREAT INTELLIGENCE", "yellow")
-        color_print(f"{'':>5}{system_info}", "white", ["dark"])
         color_print("=" * 80 + "\n", "red", ["bold"])
-        
-        color_print("[*] Initializing fsociety forensic protocols...", "green")
-        color_print("[*] Loading exploit detection signatures...", "green")
-        color_print("[*] Establishing anonymous analysis environment...", "green")
-        color_print("[+] System compromised. Ready for analysis.\n", "green", ["bold"])
-        color_print("=" * 80, "red", ["bold"])
         print()
+    
+    def _animate_skull(self, skull_lines: List[str], no_color: bool, stop_event: threading.Event):
+        """Animate the skull moving left and right continuously."""
+        max_offset = 20  # Maximum pixels to move left/right
+        position = 0
+        direction = 1  # 1 for right, -1 for left
+        
+        while not stop_event.is_set():
+            # Save cursor position and move to top
+            sys.stdout.write("\033[s")  # Save cursor position
+            sys.stdout.write("\033[1;1H")  # Move to top-left
+            
+            # Clear the skull area
+            for _ in range(len(skull_lines)):
+                sys.stdout.write("\033[K\n")  # Clear line and move down
+            
+            # Move cursor back to top
+            sys.stdout.write("\033[1;1H")
+            
+            # Print skull with offset
+            for line in skull_lines:
+                offset_line = " " * position + line
+                if no_color:
+                    sys.stdout.write(offset_line + "\n")
+                else:
+                    sys.stdout.write(colored(offset_line, "green", attrs=["dark"]) + "\n")
+            
+            sys.stdout.write("\033[u")  # Restore cursor position
+            sys.stdout.flush()
+            
+            # Update position
+            position += direction
+            if position >= max_offset or position <= 0:
+                direction *= -1  # Reverse direction
+            
+            time.sleep(0.1)  # Animation speed
+    
+    def stop_animation(self):
+        """Stop the skull animation thread."""
+        if self.skull_animation_stop:
+            self.skull_animation_stop.set()
+        if self.skull_animation_thread and self.skull_animation_thread.is_alive():
+            self.skull_animation_thread.join(timeout=1)
     
     def check_dependencies(self) -> bool:
         """Check if required dependencies are installed."""
@@ -433,11 +436,16 @@ class APKForensics:
         except KeyboardInterrupt:
             self.logger.info("Analysis interrupted by user")
             print(colored("\n\nAnalysis interrupted by user.", "yellow") if not no_color else "\n\nAnalysis interrupted by user.")
+            self.stop_animation()
             sys.exit(0)
         except Exception as e:
             self.logger.exception("Fatal error occurred")
             print(colored(f"\nFatal error: {str(e)}", "red") if not no_color else f"\nFatal error: {str(e)}")
+            self.stop_animation()
             sys.exit(1)
+        finally:
+            # Always stop animation on exit
+            self.stop_animation()
 
 
 def main():

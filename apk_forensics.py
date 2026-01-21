@@ -25,6 +25,19 @@ except ImportError:
     print("Error: Required dependencies not installed. Run: pip install -r requirements.txt")
     sys.exit(1)
 
+# Import reporting modules individually to handle partial dependencies
+try:
+    from pdf_generator import convert_report_to_pdf
+except ImportError as e:
+    # print(f"Warning: PDF generation module not available: {e}")
+    def convert_report_to_pdf(*args, **kwargs): return None
+
+try:
+    from crystal_exporter import convert_report_to_crystal
+except ImportError as e:
+    # print(f"Warning: Crystal Reports exporter not available: {e}")
+    def convert_report_to_crystal(*args, **kwargs): return None
+
 # Import version
 try:
     from __version__ import __version__
@@ -382,7 +395,30 @@ class APKForensics:
         color_print(f"Report saved to: {report_path}", "green")
         print("=" * 80 + "\n")
     
-    def run(self, apk_path: Optional[str] = None, quiet: bool = False, no_color: bool = False):
+    def generate_additional_reports(self, text_report_path: str, generate_pdf: bool = False, generate_crystal: bool = False):
+        """Generate PDF and Crystal Reports formatted files."""
+        generated_files = []
+
+        if generate_pdf:
+            try:
+                pdf_path = convert_report_to_pdf(text_report_path)
+                self.logger.info(f"PDF report generated: {pdf_path}")
+                generated_files.append(f"PDF: {pdf_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to generate PDF: {e}")
+
+        if generate_crystal:
+            try:
+                xml_path = convert_report_to_crystal(text_report_path)
+                self.logger.info(f"Crystal Reports XML generated: {xml_path}")
+                generated_files.append(f"Crystal XML: {xml_path}")
+            except Exception as e:
+                self.logger.error(f"Failed to generate Crystal XML: {e}")
+
+        return generated_files
+
+    def run(self, apk_path: Optional[str] = None, quiet: bool = False, no_color: bool = False,
+            gen_pdf: bool = False, gen_crystal: bool = False):
         """Main execution method."""
         try:
             self.display_banner(quiet=quiet, no_color=no_color)
@@ -411,6 +447,16 @@ class APKForensics:
                 try:
                     report_path = self.analyze_apk_with_claude(apk)
                     reports.append(report_path)
+
+                    # Generate additional formats
+                    if gen_pdf or gen_crystal:
+                        extra_files = self.generate_additional_reports(report_path, gen_pdf, gen_crystal)
+                        if extra_files:
+                            print(colored("Generated additional reports:", "cyan"))
+                            for f in extra_files:
+                                print(colored(f"  - {f}", "cyan"))
+                            print()
+
                 except Exception as e:
                     error_msg = f"Error analyzing {os.path.basename(apk)}: {str(e)}"
                     print(colored(error_msg, "red") if not no_color else error_msg)
@@ -466,6 +512,8 @@ Examples:
     parser.add_argument('--quiet', action='store_true', help='Suppress banner and progress messages')
     parser.add_argument('--verbose', action='store_true', help='Enable debug logging')
     parser.add_argument('--no-color', action='store_true', help='Disable colored output')
+    parser.add_argument('--pdf', action='store_true', help='Generate professional PDF report')
+    parser.add_argument('--crystal', action='store_true', help='Generate Crystal Reports compatible XML')
     parser.add_argument('--version', action='version', version=f'fSOC APK Forensics v{__version__}')
     
     args = parser.parse_args()
@@ -475,7 +523,13 @@ Examples:
         logging.getLogger().setLevel(logging.DEBUG)
     
     app = APKForensics(config_path=args.config)
-    app.run(apk_path=args.apk, quiet=args.quiet, no_color=args.no_color)
+    app.run(
+        apk_path=args.apk,
+        quiet=args.quiet,
+        no_color=args.no_color,
+        gen_pdf=args.pdf,
+        gen_crystal=args.crystal
+    )
 
 
 if __name__ == "__main__":

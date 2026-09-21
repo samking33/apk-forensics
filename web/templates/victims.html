@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+{% block title %}Victim Rescue — fSOC{% endblock %}
+{% block breadcrumb_current %}Victim Rescue{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-heading">
+    <div class="page-title">Victim Rescue</div>
+    <div class="page-sub">
+      Extract victims from recovered Firebase C2 backends &mdash; identify and alert people
+      before they are defrauded.
+    </div>
+  </div>
+</div>
+
+<!-- Mission metrics -->
+<div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:22px">
+  <div class="stat-card">
+    <div class="label">Victims Identified</div>
+    <div class="value red">{{ "{:,}".format(stats.victims) }}</div>
+    <div class="sub">across all C2 backends</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">OTPs Intercepted</div>
+    <div class="value" style="color:var(--warning)">{{ "{:,}".format(stats.otps) }}</div>
+    <div class="sub">banking one-time-passwords</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Exposure</div>
+    <div class="value red">&#8377;{{ "{:,.0f}".format(stats.loss) }}</div>
+    <div class="sub">at-risk / debited</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">C2 Sources</div>
+    <div class="value blue">{{ stats.sources }}</div>
+    <div class="sub">{{ stats.extracted }} extracted</div>
+  </div>
+</div>
+
+<!-- Manual C2 probe — credentials from prior investigations -->
+<div class="card" style="margin-bottom:14px">
+  <div class="card-header">
+    <div class="hdr-left"><i class="fa-solid fa-keyboard"></i> Manual C2 Probe</div>
+  </div>
+  <div class="card-body">
+    <div class="text-muted" style="font-size:12px;margin-bottom:12px">
+      Have Firebase credentials from a prior investigation? Enter them to probe the backend
+      directly — results register as a case and flow into records, financial, geo-map &amp; monitor.
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:1;min-width:200px">
+        <label class="form-label">Firebase Project ID</label>
+        <input id="m-project" class="form-input" placeholder="e.g. syndi8-6d74a" autocomplete="off">
+      </div>
+      <div style="flex:1.4;min-width:240px">
+        <label class="form-label">API Key</label>
+        <input id="m-key" class="form-input" placeholder="AIzaSy…" autocomplete="off">
+      </div>
+      <button class="btn btn-primary" onclick="manualProbe(this)"><i class="fa-solid fa-satellite-dish"></i> Probe C2</button>
+    </div>
+    <div id="m-status" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<div class="detail-grid" style="margin-bottom:14px">
+  <!-- Telegram bot OSINT — attacker attribution via exfil bot -->
+  <div class="card">
+    <div class="card-header">
+      <div class="hdr-left"><i class="fa-brands fa-telegram"></i> Telegram Bot Intel</div>
+    </div>
+    <div class="card-body">
+      <div class="text-muted" style="font-size:12px;margin-bottom:12px">
+        Many trojans exfiltrate straight to a Telegram bot. A recovered bot token can reveal the
+        bot identity and — for a private chat — the operator's own Telegram name/username.
+      </div>
+      <label class="form-label">Bot Token</label>
+      <input id="t-token" class="form-input" placeholder="123456789:AAH…" autocomplete="off" style="margin-bottom:8px">
+      <label class="form-label">Chat ID <span class="optional">(optional, for attacker identity)</span></label>
+      <input id="t-chat" class="form-input" placeholder="e.g. 6785293659" autocomplete="off" style="margin-bottom:10px">
+      <button class="btn btn-primary" onclick="telegramProbe(this)" style="width:100%;justify-content:center">
+        <i class="fa-brands fa-telegram"></i> Probe Bot
+      </button>
+      <div id="t-status" style="margin-top:12px"></div>
+    </div>
+  </div>
+
+  <!-- Custom C2 infrastructure pivot -->
+  <div class="card">
+    <div class="card-header">
+      <div class="hdr-left"><i class="fa-solid fa-server"></i> C2 Infrastructure Pivot</div>
+    </div>
+    <div class="card-body">
+      <div class="text-muted" style="font-size:12px;margin-bottom:12px">
+        For custom (non-Firebase) HTTP C2 domains: resolve, WHOIS, and cluster by shared hosting
+        &mdash; attackers frequently reuse the same VPS across campaigns.
+      </div>
+      <label class="form-label">C2 Domains <span class="optional">(one per line)</span></label>
+      <textarea id="i-domains" class="form-input" rows="3" placeholder="turat-fund.com&#10;centcash.net&#10;max-cash.net" style="margin-bottom:10px;font-family:var(--font-mono);font-size:12px;resize:vertical"></textarea>
+      <button class="btn btn-primary" onclick="infraPivot(this)" style="width:100%;justify-content:center">
+        <i class="fa-solid fa-diagram-project"></i> Analyse Infrastructure
+      </button>
+      <div id="i-status" style="margin-top:12px"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div class="hdr-left"><i class="fa-brands fa-google"></i> Firebase C2 Backends</div>
+    <span class="hdr-count">{{ c2_apks|length }} source{{ 's' if c2_apks|length != 1 else '' }}</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Sample</th>
+        <th>Firebase Project</th>
+        <th>Attacker Phone</th>
+        <th>Victims</th>
+        <th>OTPs</th>
+        <th>Status</th>
+        <th style="width:230px"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for a in c2_apks %}
+      <tr id="row-{{ a.id[:12] }}">
+        <td>
+          <a href="/case/{{ a.id }}" class="fw500" style="color:var(--text)">{{ a.filename[:28] }}{% if a.filename|length > 28 %}…{% endif %}</a>
+          <div class="hash">{{ a.package_name or a.id[:20] }}</div>
+        </td>
+        <td><span class="badge badge-danger">{{ a.firebase_project }}</span></td>
+        <td style="font-family:var(--font-mono);font-size:12px;{% if a.attacker_phone %}color:var(--danger);font-weight:600{% else %}color:var(--text-muted){% endif %}">
+          {{ a.attacker_phone or '—' }}
+        </td>
+        <td class="v-count" style="font-weight:700;color:{% if a.victim_count %}var(--danger){% else %}var(--text-muted){% endif %}">
+          {{ a.victim_count or '—' }}
+        </td>
+        <td style="font-family:var(--font-mono);color:var(--warning)">{{ a.otp_count or '—' }}</td>
+        <td class="v-status">
+          {% if a.dynamic_done %}
+            <span class="badge badge-success">Extracted</span>
+          {% else %}
+            <span class="badge badge-dim">Not extracted</span>
+          {% endif %}
+        </td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-sm btn-primary v-extract" onclick="extract('{{ a.id }}')">
+            <i class="fa-solid fa-download"></i> {% if a.dynamic_done %}Re-extract{% else %}Extract Victims{% endif %}
+          </button>
+          <a href="/case/{{ a.id }}#victims" class="btn btn-sm" onclick="event.stopPropagation()">View</a>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:56px 20px">
+        <i class="fa-brands fa-google" style="font-size:26px;display:block;margin-bottom:10px;opacity:.3"></i>
+        <div style="font-weight:500;color:var(--text-secondary);margin-bottom:4px">No Firebase C2 backends yet</div>
+        <div style="font-size:12px">Analyse an APK in Static Analysis — if it uses a Firebase C2, it appears here for victim extraction.</div>
+      </td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="alert alert-info" style="margin-top:14px">
+  <i class="fa-solid fa-circle-info"></i>
+  Extraction connects to the attacker's live Firebase backend to enumerate harvested victims.
+  Run only within authorised investigations. Results populate each case's Victims tab, the
+  Financial and Geo-Map views, and the evidence pack.
+</div>
+
+{% endblock %}
+{% block scripts %}
+<style>
+.prog-wrap{min-width:160px}
+.prog-label{font-size:10px;color:var(--text-secondary);margin-bottom:4px;display:flex;justify-content:space-between;gap:8px}
+.prog-track{height:6px;background:var(--bg-hover);border-radius:3px;overflow:hidden}
+.prog-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .3s ease}
+.prog-fill.indet{width:35%!important;animation:indet 1.1s ease-in-out infinite}
+@keyframes indet{0%{margin-left:-35%}100%{margin-left:100%}}
+.rec-kv-mini{font-size:12px;padding:3px 0;color:var(--text-secondary)}
+.rec-kv-mini b{color:var(--text);font-weight:600}
+.rec-scroll{border:1px solid var(--border);border-radius:6px;overflow:auto}
+.rec-tbl{width:100%;border-collapse:collapse;font-size:11px}
+.rec-tbl th{background:var(--bg-subtle);text-align:left;padding:5px 8px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;font-size:9px;position:sticky;top:0}
+.rec-tbl td{padding:5px 8px;border-bottom:1px solid var(--border-muted)}
+</style>
+<script>
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function telegramProbe(btn){
+  const token = document.getElementById('t-token').value.trim();
+  const chat = document.getElementById('t-chat').value.trim();
+  const status = document.getElementById('t-status');
+  if(!token){ status.innerHTML='<span class="text-danger" style="font-size:12px">Enter a bot token.</span>'; return; }
+  const orig = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:11px;height:11px"></span> Probing…';
+  status.innerHTML = '<span class="text-muted" style="font-size:12px">Querying Telegram Bot API…</span>';
+  try{
+    const r = await (await fetch('/api/victims/telegram', {method:'POST',
+      body:new URLSearchParams({token, chat_id:chat})})).json();
+    if(!r.token_alive){
+      status.innerHTML = `<div class="alert alert-warning" style="margin:0;padding:8px 12px;font-size:12px">
+        <i class="fa-solid fa-triangle-exclamation"></i> ${esc((r.errors||[])[0]||'Token invalid or revoked.')}</div>`;
+    } else {
+      let html = `<div class="alert alert-success" style="margin:0 0 8px;padding:8px 12px;font-size:12px">
+        <i class="fa-solid fa-circle-check"></i> ${esc(r.attribution)}</div>`;
+      if(r.bot) html += `<div class="rec-kv-mini"><b>Bot:</b> @${esc(r.bot.username)} (id ${r.bot.id})</div>`;
+      if(r.chat){
+        const c = r.chat;
+        html += `<div class="rec-kv-mini"><b>Chat:</b> ${esc(c.type)} · id ${c.id}`
+          + (c.first_name?` · ${esc([c.first_name,c.last_name].filter(Boolean).join(' '))}`:'')
+          + (c.username?` · @${esc(c.username)}`:'') + `</div>`;
+      }
+      if(r.webhook && r.webhook.url) html += `<div class="rec-kv-mini"><b>Webhook (2nd C2):</b> <span class="mono">${esc(r.webhook.url)}</span></div>`;
+      status.innerHTML = html;
+    }
+  }catch(e){ status.innerHTML = '<span class="text-danger" style="font-size:12px">Failed: '+e.message+'</span>'; }
+  btn.disabled = false; btn.innerHTML = orig;
+}
+
+async function infraPivot(btn){
+  const domains = document.getElementById('i-domains').value.trim();
+  const status = document.getElementById('i-status');
+  if(!domains){ status.innerHTML='<span class="text-danger" style="font-size:12px">Enter at least one domain.</span>'; return; }
+  const orig = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:11px;height:11px"></span> Resolving…';
+  status.innerHTML = '<span class="text-muted" style="font-size:12px">DNS + WHOIS lookups…</span>';
+  try{
+    const r = await (await fetch('/api/victims/infra', {method:'POST', body:new URLSearchParams({domains})})).json();
+    let html = '';
+    if(r.clusters && r.clusters.length){
+      html += r.clusters.map(c=>`<div class="alert alert-warning" style="margin:0 0 6px;padding:8px 12px;font-size:12px">
+        <i class="fa-solid fa-link"></i> <b>${esc(c.signal)}</b> (${c.ip}): ${c.domains.map(esc).join(', ')}</div>`).join('');
+    }
+    html += '<div class="rec-scroll" style="max-height:220px"><table class="rec-tbl"><thead><tr><th>Domain</th><th>Status</th><th>IP</th><th>Country</th><th>Registrar</th></tr></thead><tbody>';
+    for(const [d,info] of Object.entries(r.domains)){
+      html += `<tr><td>${esc(d)}</td><td>${info.alive?'<span class="badge badge-success">live</span>':'<span class="badge badge-dim">dead</span>'}</td>
+        <td>${esc(info.ip||'—')}</td><td>${esc(info.country||'—')}</td><td>${esc(info.registrar||'—')}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    status.innerHTML = html;
+  }catch(e){ status.innerHTML = '<span class="text-danger" style="font-size:12px">Failed: '+e.message+'</span>'; }
+  btn.disabled = false; btn.innerHTML = orig;
+}
+
+async function manualProbe(btn){
+  const project = document.getElementById('m-project').value.trim();
+  const key = document.getElementById('m-key').value.trim();
+  const status = document.getElementById('m-status');
+  if(!project || !key){ status.innerHTML='<span class="text-danger" style="font-size:12px">Enter both project ID and API key.</span>'; return; }
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="width:11px;height:11px"></span> Probing…';
+  status.innerHTML = renderProgress({phase:'Connecting to C2', current:0, total:0});
+  try{
+    const r = await (await fetch('/api/victims/manual', {method:'POST',
+      body:new URLSearchParams({project_id:project, api_key:key})})).json();
+    if(r.detail) throw new Error(r.detail);
+    const t = setInterval(async ()=>{
+      let j; try{ j = await (await fetch('/api/job/'+r.job_id)).json(); }catch(e){ return; }
+      if(j.status === 'running'){ status.innerHTML = renderProgress(j); }
+      else if(j.status === 'done'){ clearInterval(t);
+        status.innerHTML = `<span class="badge badge-success">Extracted ${(j.victims||0).toLocaleString()} victims</span> &nbsp;<span class="text-muted" style="font-size:12px">— adding to list…</span>`;
+        setTimeout(()=>location.reload(), 1200);
+      } else if(j.status === 'error'){ clearInterval(t);
+        status.innerHTML = '<span class="text-danger" style="font-size:12px">Probe failed: '+(j.error||'unknown')+'. Check the project ID / API key.</span>';
+        btn.disabled=false; btn.innerHTML=orig;
+      }
+    }, 800);
+  }catch(e){
+    status.innerHTML = '<span class="text-danger" style="font-size:12px">Failed: '+e.message+'</span>';
+    btn.disabled=false; btn.innerHTML=orig;
+  }
+}
+
+function renderProgress(j){
+  const phase = j.phase || 'Working';
+  if(j.total > 0){
+    const pct = Math.min(100, Math.round(j.current / j.total * 100));
+    return `<div class="prog-wrap">
+      <div class="prog-label"><span>${phase}</span><span>${j.current.toLocaleString()}/${j.total.toLocaleString()} · ${pct}%</span></div>
+      <div class="prog-track"><div class="prog-fill" style="width:${pct}%"></div></div></div>`;
+  }
+  // no total yet (connecting / enumerating) — indeterminate bar
+  return `<div class="prog-wrap">
+    <div class="prog-label"><span>${phase}</span><span>…</span></div>
+    <div class="prog-track"><div class="prog-fill indet"></div></div></div>`;
+}
+
+async function extract(apkId){
+  const short = apkId.slice(0,12);
+  const row = document.getElementById('row-'+short);
+  const btn = row.querySelector('.v-extract');
+  const statusCell = row.querySelector('.v-status');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="width:11px;height:11px"></span> Probing…';
+  statusCell.innerHTML = renderProgress({phase:'Connecting to C2', current:0, total:0});
+  try{
+    const r = await (await fetch('/api/victims/extract/'+apkId, {method:'POST'})).json();
+    if(r.detail){ throw new Error(r.detail); }
+    poll(r.job_id, apkId);
+  }catch(e){
+    statusCell.innerHTML = '<span class="badge badge-danger">Failed</span>';
+    btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> Retry';
+    alert('Extraction failed: '+e.message);
+  }
+}
+
+function poll(jobId, apkId){
+  const short = apkId.slice(0,12);
+  const row = document.getElementById('row-'+short);
+  const btn = row.querySelector('.v-extract');
+  const statusCell = row.querySelector('.v-status');
+  const countCell = row.querySelector('.v-count');
+  const t = setInterval(async ()=>{
+    let j;
+    try{ j = await (await fetch('/api/job/'+jobId)).json(); }catch(e){ return; }
+    if(j.status === 'running'){
+      statusCell.innerHTML = renderProgress(j);
+      if(j.current) countCell.textContent = j.current.toLocaleString();
+    } else if(j.status === 'done'){
+      clearInterval(t);
+      countCell.textContent = (j.victims||0).toLocaleString();
+      countCell.style.color = j.victims ? 'var(--danger)' : 'var(--text-muted)';
+      statusCell.innerHTML = '<span class="badge badge-success">Extracted</span>';
+      btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-download"></i> Re-extract';
+      if(j.victims){ setTimeout(()=>location.reload(), 1000); }   // refresh mission totals
+    } else if(j.status === 'error'){
+      clearInterval(t);
+      statusCell.innerHTML = '<span class="badge badge-danger">Failed</span>';
+      btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-rotate-right"></i> Retry';
+      alert('Extraction error: '+(j.error||'unknown'));
+    }
+  }, 800);
+}
+</script>
+{% endblock %}

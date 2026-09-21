@@ -1,0 +1,463 @@
+{% extends "base.html" %}
+{% block title %}{{ apk.filename }} — fSOC{% endblock %}
+{% block breadcrumb %}
+<a href="/">Dashboard</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<span class="current">{{ apk.filename }}</span>
+{% endblock %}
+
+{% block content %}
+
+{% macro sevbadge(sev) %}
+{% set lc = 'danger' if sev=='CRITICAL' else 'warning' if sev=='HIGH' else 'info' if sev=='MEDIUM' else 'success' if sev=='LOW' else 'dim' %}
+<span class="badge badge-{{ lc }}">{{ sev }}</span>
+{% endmacro %}
+
+{% macro findings_table(rows) %}
+<div class="card">
+  <table>
+    <thead><tr><th>Severity</th><th>Category</th><th>Finding</th><th>Detail</th><th>Location</th></tr></thead>
+    <tbody>
+    {% for f in rows|sort(attribute='severity') %}
+      <tr>
+        <td>{{ sevbadge(f.severity) }}</td>
+        <td><span class="badge badge-dim">{{ f.category }}</span></td>
+        <td class="fw500">{{ f.title }}</td>
+        <td style="max-width:320px;white-space:normal;font-size:12px;color:var(--text-secondary)">
+          {{ (f.detail or '')[:180] }}{% if (f.detail or '')|length > 180 %}…{% endif %}</td>
+        <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">{{ f.found_at or '—' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:36px">Nothing in this category.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+<!-- Header -->
+<div class="page-header">
+  <div class="page-heading">
+    <div class="page-title">{{ apk.filename }}</div>
+    <div class="hash" style="margin-top:4px;font-size:11px">{{ apk.id }}</div>
+  </div>
+  <div class="page-actions">
+    <a href="/case/{{ apk.id }}/canvas" class="btn btn-primary">
+      <i class="fa-solid fa-diagram-project"></i> Canvas
+    </a>
+    {% if apk.firebase_project %}
+    <a href="/case/{{ apk.id }}/records" class="btn">
+      <i class="fa-solid fa-folder-open"></i> Full Records
+    </a>
+    {% endif %}
+    <a href="/case/{{ apk.id }}/scorecard" target="_blank" class="btn">
+      <i class="fa-solid fa-gauge-high"></i> Scorecard
+    </a>
+    <a href="/monitor/{{ apk.id }}" class="btn"><i class="fa-solid fa-satellite-dish"></i> Monitor</a>
+    <a href="/financial/{{ apk.id }}" class="btn"><i class="fa-solid fa-indian-rupee-sign"></i> Financial</a>
+    <a href="/geomap/{{ apk.id }}" class="btn"><i class="fa-solid fa-map-location-dot"></i> Geo Map</a>
+  </div>
+</div>
+
+<!-- Summary metrics -->
+<div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-bottom:22px">
+  <div class="stat-card">
+    <div class="label">Risk Score</div>
+    {% set c = 'red' if apk.risk_score >= 70 else 'yellow' if apk.risk_score >= 40 else 'green' %}
+    <div class="value {{ c }}">{{ apk.risk_score }}<span style="font-size:14px;opacity:.5">/100</span></div>
+  </div>
+  <div class="stat-card"><div class="label">Behaviours</div>
+    <div class="value red">{{ (apk.behaviors or [])|length }}</div></div>
+  <div class="stat-card"><div class="label">Victims</div>
+    <div class="value red">{{ apk.victim_count or 0 }}</div></div>
+  <div class="stat-card"><div class="label">OTPs Stolen</div>
+    <div class="value red">{{ "{:,}".format(apk.otp_count or 0) }}</div></div>
+  <div class="stat-card"><div class="label">Findings</div>
+    <div class="value yellow">{{ findings|length }}</div></div>
+  <div class="stat-card"><div class="label">IoCs</div>
+    <div class="value blue">{{ iocs|length }}</div></div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <a class="tab active" href="#" onclick="switchTab('overview',this);return false"><i class="fa-solid fa-circle-info" style="font-size:11px"></i>&nbsp; Overview</a>
+  <a class="tab" href="#" onclick="switchTab('behaviours',this);return false">Behaviours <span class="tc">{{ (apk.behaviors or [])|length }}</span></a>
+  <a class="tab" href="#" onclick="switchTab('c2',this);return false">C2 &amp; Network <span class="tc">{{ (apk.c2_detail or [])|length }}</span></a>
+  <a class="tab" href="#" onclick="switchTab('findings',this);return false">Findings <span class="tc">{{ findings|length }}</span></a>
+  <a class="tab" href="#" onclick="switchTab('cert',this);return false">Certificate</a>
+  <a class="tab" href="#" onclick="switchTab('env',this);return false">Environment <span class="tc">{{ (by_cat.get('TRACKER',[])|length) + (by_cat.get('SBOM',[])|length) + (by_cat.get('NATIVE',[])|length) }}</span></a>
+  <a class="tab" href="#" onclick="switchTab('victims',this);return false">Victims <span class="tc">{{ apk.victim_count or 0 }}</span></a>
+  <a class="tab" href="#" onclick="switchTab('leads',this);return false">Leads <span class="tc">{{ leads|length }}</span></a>
+  <a class="tab" href="#" onclick="switchTab('iocs',this);return false">IoCs <span class="tc">{{ iocs|length }}</span></a>
+  <a class="tab" href="#" onclick="switchTab('intel',this);return false">Intel <span class="tc">{{ clusters|length }}</span></a>
+  <a class="tab" href="#" onclick="switchTab('exports',this);return false">Exports</a>
+</div>
+
+<!-- ── OVERVIEW ─────────────────────────────────────────── -->
+<div id="tab-overview">
+  {% if apk.behaviors %}
+  <div class="card" style="margin-bottom:12px;border-color:var(--danger-border)">
+    <div class="card-header"><div class="hdr-left"><i class="fa-solid fa-triangle-exclamation text-danger"></i> Detected Malicious Behaviours</div></div>
+    <div class="card-body">
+      {% for b in apk.behaviors %}<span class="chip-crit">{{ b.replace('_',' ')|title }}</span>{% endfor %}
+      {% if apk.malware_tags %}<div style="margin-top:10px">
+        {% for t in apk.malware_tags %}<span class="chip-tag">{{ t.replace('_',' ') }}</span>{% endfor %}
+      </div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="detail-grid">
+    <div class="card">
+      <div class="card-header"><div class="hdr-left"><i class="fa-solid fa-scale-balanced"></i> Risk Breakdown</div>
+        {{ sevbadge(apk.risk_score >= 70 and 'CRITICAL' or apk.risk_score >= 40 and 'HIGH' or apk.risk_score >= 20 and 'MEDIUM' or 'LOW') }}</div>
+      <div class="card-body" style="padding:0">
+        <table style="margin:0">
+          <thead><tr><th style="padding-left:18px">Factor</th><th class="num">Points</th><th>Detail</th></tr></thead>
+          <tbody>
+          {% for b in apk.risk_breakdown or [] %}
+            <tr><td style="padding-left:18px" class="fw500">{{ b.factor }}</td>
+              <td style="text-align:right;font-family:var(--font-mono);color:var(--warning)">+{{ b.points }}</td>
+              <td class="text-dim" style="font-size:12px">{{ b.detail }}</td></tr>
+          {% else %}
+            <tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:24px">No risk factors triggered.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="hdr-left"><i class="fa-solid fa-file-code"></i> APK Metadata</div></div>
+      <div class="card-body" style="padding:0">
+        <table class="kv-table" style="padding:0 18px">
+          {% for k, v in [('Package',apk.package_name),('Version',(apk.version_name or '') ~ ' (' ~ (apk.version_code or '') ~ ')'),
+            ('Min SDK',apk.min_sdk),('Target SDK',apk.target_sdk),('Signing',apk.cert_schemes),('Analysed',apk.analysed_at)] %}
+          <tr><td class="kv-key" style="padding:10px 0 10px 18px">{{ k }}</td>
+            <td class="kv-val" style="padding:10px 18px 10px 0">{{ v or '—' }}</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="hdr-left"><i class="fa-brands fa-google"></i> Firebase C2</div>
+        {% if apk.firebase_project %}<span class="badge badge-danger">C2 Detected</span>{% endif %}</div>
+      <div class="card-body" style="padding:0">
+        <table class="kv-table" style="padding:0 18px">
+          {% for k, v in [('Project ID',apk.firebase_project),('API Key',apk.firebase_api_key),
+            ('Attacker Phone',apk.attacker_phone),('Dynamic done','Yes' if apk.dynamic_done else 'No')] %}
+          <tr><td class="kv-key" style="padding:10px 0 10px 18px">{{ k }}</td>
+            <td class="kv-val" style="padding:10px 18px 10px 0;font-family:var(--font-mono);font-size:12px;
+              {% if k=='Attacker Phone' and v %}color:var(--danger);font-weight:600{% endif %}">{{ v or '—' }}</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="hdr-left"><i class="fa-solid fa-chart-pie"></i> Victim Risk Distribution</div></div>
+      <div class="card-body">
+        {% for level, count in victim_stats.items() %}
+        {% set lc = 'danger' if level=='CRITICAL' else 'warning' if level=='HIGH' else 'info' if level=='MEDIUM' else 'success' %}
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border-muted)">
+          <span class="badge badge-{{ lc }}">{{ level }}</span>
+          <span style="font-size:20px;font-weight:700;color:var(--{{ lc }})">{{ count }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── BEHAVIOURS ───────────────────────────────────────── -->
+<div id="tab-behaviours" style="display:none">
+  {% if apk.behaviors %}
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-body">
+      {% for b in apk.behaviors %}<span class="chip-crit">{{ b.replace('_',' ')|title }}</span>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  {{ findings_table(by_cat.get('BEHAVIOUR', [])) }}
+</div>
+
+<!-- ── C2 & NETWORK ─────────────────────────────────────── -->
+<div id="tab-c2" style="display:none">
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-header"><div class="hdr-left"><i class="fa-solid fa-tower-broadcast"></i> Command &amp; Control Channels</div></div>
+    <table>
+      <thead><tr><th>Type</th><th>Value</th></tr></thead>
+      <tbody>
+      {% for c in apk.c2_detail or [] %}
+        <tr><td>{% set cc = 'danger' if c.type in ['telegram','firebase'] else 'warning' %}<span class="badge badge-{{ cc }}">{{ c.type }}</span></td>
+          <td style="font-family:var(--font-mono);font-size:11px;word-break:break-all">{{ c.value }}</td></tr>
+      {% else %}
+        <tr><td colspan="2" style="text-align:center;color:var(--text-muted);padding:36px">No C2 channel identified.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="section-label">Network Indicators</div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Type</th><th>Value</th></tr></thead>
+      <tbody>
+      {% for ioc in iocs if ioc.ioc_type in ['URL','IP','DOMAIN'] %}
+        <tr><td><span class="badge badge-info">{{ ioc.ioc_type }}</span></td>
+          <td style="font-family:var(--font-mono);font-size:11px;word-break:break-all">{{ ioc.value }}</td></tr>
+      {% else %}
+        <tr><td colspan="2" style="text-align:center;color:var(--text-muted);padding:36px">No network IoCs.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── FINDINGS ─────────────────────────────────────────── -->
+<div id="tab-findings" style="display:none">
+  <div class="filter-bar" style="margin-bottom:10px;border:1px solid var(--border);border-radius:4px">
+    <button class="filter-btn active" onclick="setFCat('ALL',this)">All ({{ findings|length }})</button>
+    {% for cat, rows in by_cat.items() %}
+      <button class="filter-btn" onclick="setFCat('{{ cat }}',this)">{{ cat }} ({{ rows|length }})</button>
+    {% endfor %}
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Severity</th><th>Category</th><th>Finding</th><th>Detail</th><th>Location</th></tr></thead>
+      <tbody>
+      {% for f in findings|sort(attribute='severity') %}
+        <tr class="finding-row" data-cat="{{ f.category }}">
+          <td>{{ sevbadge(f.severity) }}</td>
+          <td><span class="badge badge-dim">{{ f.category }}</span></td>
+          <td class="fw500">{{ f.title }}</td>
+          <td style="max-width:300px;white-space:normal;font-size:12px;color:var(--text-secondary)">
+            {{ (f.detail or '')[:160] }}{% if (f.detail or '')|length > 160 %}…{% endif %}</td>
+          <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">{{ f.found_at or '—' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:48px">No findings yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── CERTIFICATE ──────────────────────────────────────── -->
+<div id="tab-cert" style="display:none">
+  <div class="card" style="margin-bottom:12px">
+    <div class="card-header"><div class="hdr-left"><i class="fa-solid fa-certificate"></i> Signing Certificate</div>
+      {% if apk.cert_schemes %}<span class="badge badge-info">{{ apk.cert_schemes }}</span>{% endif %}</div>
+    <div class="card-body" style="padding:0">
+      <table class="kv-table" style="padding:0 18px">
+        {% for k, v in [('Signing schemes',apk.cert_schemes),('Subject',apk.cert_subject),
+          ('Serial',apk.cert_serial),('SHA-256',apk.cert_sha256)] %}
+        <tr><td class="kv-key" style="padding:10px 0 10px 18px">{{ k }}</td>
+          <td class="kv-val" style="padding:10px 18px 10px 0;font-family:var(--font-mono);font-size:11px;word-break:break-all">{{ v or '—' }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+  {{ findings_table(by_cat.get('CERTIFICATE', [])) }}
+</div>
+
+<!-- ── ENVIRONMENT ──────────────────────────────────────── -->
+<div id="tab-env" style="display:none">
+  <div class="section-label">Trackers &amp; Ad SDKs</div>
+  {{ findings_table(by_cat.get('TRACKER', [])) }}
+  <div class="section-label" style="margin-top:16px">Bundled Libraries (SBOM)</div>
+  {{ findings_table(by_cat.get('SBOM', [])) }}
+  <div class="section-label" style="margin-top:16px">Native Libraries</div>
+  {{ findings_table(by_cat.get('NATIVE', [])) }}
+  <div class="section-label" style="margin-top:16px">Insecure Code Patterns</div>
+  {{ findings_table(by_cat.get('CODE', [])) }}
+</div>
+
+<!-- ── VICTIMS ──────────────────────────────────────────── -->
+<div id="tab-victims" style="display:none">
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+    <div class="search-bar" style="flex:1;min-width:240px;margin:0">
+      <input type="text" id="victim-search" placeholder="Search name, mobile, bank…" oninput="filterVictims()">
+      <button class="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button class="filter-btn active" onclick="setVRisk('ALL',this)">All</button>
+      <button class="filter-btn" onclick="setVRisk('CRITICAL',this)" style="color:var(--danger)">Critical</button>
+      <button class="filter-btn" onclick="setVRisk('HIGH',this)" style="color:var(--warning)">High</button>
+      <button class="filter-btn" onclick="setVRisk('MEDIUM',this)" style="color:var(--info)">Medium</button>
+      <button class="filter-btn" onclick="setVRisk('LOW',this)" style="color:var(--success)">Low</button>
+    </div>
+  </div>
+  <div class="card">
+    <table id="victim-table">
+      <thead><tr><th>#</th><th>Risk</th><th>Name</th><th>Mobile</th><th>Bank</th><th>UPI PIN</th><th>Card</th><th>OTPs</th><th>Device</th><th>Infected</th></tr></thead>
+      <tbody>
+      {% for v in victims %}
+      <tr class="victim-row risk-{{ v.risk_level }}" data-risk="{{ v.risk_level }}"
+          data-name="{{ (v.full_name or '')|lower }}" data-mobile="{{ v.mobile or '' }}" data-bank="{{ (v.bank_name or '')|lower }}">
+        <td style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px">{{ loop.index }}</td>
+        <td>{{ sevbadge(v.risk_level) }}</td>
+        <td class="fw500">{{ v.full_name or '—' }}</td>
+        <td style="font-family:var(--font-mono);font-size:12px">{{ v.mobile or '—' }}</td>
+        <td>{{ v.bank_name or '—' }}</td>
+        <td>{% if v.upi_pin_stolen %}<span class="badge badge-danger">{{ v.upi_pin or 'Stolen' }}</span>{% else %}<span style="color:var(--text-muted)">—</span>{% endif %}</td>
+        <td>{% if v.card_stolen %}<span style="color:var(--danger);font-family:var(--font-mono);font-size:12px">{{ v.card_last4 or '?' }}{% if v.card_expiry %} · {{ v.card_expiry }}{% endif %}{% if v.card_cvv %} · CVV {{ v.card_cvv }}{% endif %}</span>{% else %}<span style="color:var(--text-muted)">—</span>{% endif %}</td>
+        <td style="color:var(--warning);font-family:var(--font-mono)">{{ v.otp_count }}</td>
+        <td style="color:var(--text-muted);font-size:12px">{{ (v.manufacturer or '') ~ ' ' ~ (v.device or '') }}</td>
+        <td style="color:var(--text-muted);font-size:12px;font-family:var(--font-mono)">{{ v.infected_at.strftime('%Y-%m-%d') if v.infected_at else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:48px 20px">
+        <i class="fa-solid fa-users" style="font-size:24px;display:block;margin-bottom:10px;opacity:.3"></i>
+        No victims extracted yet — run dynamic analysis to probe Firebase.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── LEADS ────────────────────────────────────────────── -->
+<div id="tab-leads" style="display:none">
+  <div class="card">
+    <table>
+      <thead><tr><th>Priority</th><th>Type</th><th>Value</th><th>Victims</th><th>Description</th><th>Recommended Action</th></tr></thead>
+      <tbody>
+      {% for l in leads %}
+      <tr>
+        <td>{% set lc = 'danger' if l.priority == 1 else 'warning' if l.priority == 2 else 'dim' %}<span class="badge badge-{{ lc }}">P{{ l.priority }}</span></td>
+        <td><span class="badge badge-info">{{ l.lead_type }}</span></td>
+        <td style="font-family:var(--font-mono);font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ l.value }}</td>
+        <td class="fw600 text-danger">{{ l.victim_count }}</td>
+        <td style="max-width:260px;white-space:normal;font-size:12px;color:var(--text-secondary)">{{ (l.description or '')[:150] }}{% if (l.description or '')|length > 150 %}…{% endif %}</td>
+        <td style="max-width:200px;white-space:normal;font-size:12px;color:var(--text-secondary)">{{ (l.action or '')[:100] }}{% if (l.action or '')|length > 100 %}…{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:48px 20px">
+        <i class="fa-solid fa-crosshairs" style="font-size:24px;display:block;margin-bottom:10px;opacity:.3"></i>No leads generated yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── IoCs ─────────────────────────────────────────────── -->
+<div id="tab-iocs" style="display:none">
+  <div class="card">
+    <table>
+      <thead><tr><th>Type</th><th>Value</th><th>Description</th></tr></thead>
+      <tbody>
+      {% for ioc in iocs %}
+      <tr><td><span class="badge badge-info">{{ ioc.ioc_type }}</span></td>
+        <td style="font-family:var(--font-mono);font-size:11px;word-break:break-all;white-space:normal;max-width:340px;color:var(--text)">{{ ioc.value }}</td>
+        <td style="color:var(--text-secondary);font-size:12px">{{ ioc.description or '' }}</td></tr>
+      {% else %}
+      <tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:48px 20px">No IoCs extracted.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── INTEL ────────────────────────────────────────────── -->
+<div id="tab-intel" style="display:none">
+  <div class="section-label">Threat-Actor Clusters</div>
+  {% for c in clusters %}
+  <div class="corr-group" style="margin-bottom:10px">
+    <div class="corr-type">Actor cluster · {{ c.size }} samples</div>
+    <div class="corr-value">{{ c.filenames|join(', ') }}</div>
+    <div class="corr-files">
+      {% for ind in c.indicators %}<span class="corr-file">{{ ind }}</span>{% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <div class="card"><div class="card-body text-muted" style="text-align:center;padding:36px">
+    No shared-infrastructure links to other samples in the database.</div></div>
+  {% endfor %}
+
+  <div class="section-label" style="margin-top:18px">Campaign Timeline</div>
+  <div class="card"><div class="card-body" style="padding:0">
+    <table>
+      <thead><tr><th style="padding-left:18px">Timestamp</th><th>Event</th><th>Detail</th></tr></thead>
+      <tbody>
+      {% for e in timeline %}
+        <tr><td style="padding-left:18px;font-family:var(--font-mono);font-size:11px;white-space:nowrap">{{ e.ts.strftime('%Y-%m-%d %H:%M') }}</td>
+          {% set ec = 'danger' if e.category in ['MONEY','C2'] else 'warning' if e.category=='INFECTION' else 'info' %}
+          <td><span class="badge badge-{{ ec }}">{{ e.category }}</span></td>
+          <td style="font-size:12px;color:var(--text-secondary)">{{ e.detail }}</td></tr>
+      {% else %}
+        <tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:36px">No dated events yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+</div>
+
+<!-- ── EXPORTS ──────────────────────────────────────────── -->
+<div id="tab-exports" style="display:none">
+  <div class="detail-grid">
+    {% for title, desc, icon, href, blank in [
+      ('Analysis Scorecard','Visual HTML risk scorecard with full breakdown','fa-gauge-high','/case/'~apk.id~'/scorecard',True),
+      ('Section 65B Certificate','Indian Evidence Act certificate for court submission','fa-file-signature','/case/'~apk.id~'/65b',True),
+      ('STIX 2.1 Bundle','IOC bundle for MISP / CERT-In sharing','fa-share-nodes','/case/'~apk.id~'/stix',False),
+      ('Forensic Reports','Full forensic report, victim register, leads (evidence pack)','fa-folder-tree','/case/'~apk.id~'/report',False),
+    ] %}
+    <a href="{{ href }}" {% if blank %}target="_blank"{% endif %} class="card" style="text-decoration:none;display:block">
+      <div class="card-body" style="display:flex;gap:14px;align-items:center">
+        <div style="width:40px;height:40px;border-radius:6px;background:var(--info-bg);border:1px solid var(--info-border);
+          display:flex;align-items:center;justify-content:center;color:var(--accent);flex-shrink:0">
+          <i class="fa-solid {{ icon }}"></i></div>
+        <div>
+          <div class="fw600" style="color:var(--text)">{{ title }} <i class="fa-solid fa-arrow-up-right-from-square" style="font-size:9px;opacity:.5"></i></div>
+          <div class="text-muted" style="font-size:12px;margin-top:2px">{{ desc }}</div>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<style>
+.tc{opacity:.6;font-size:11px;margin-left:4px}
+.chip-crit{display:inline-block;padding:3px 10px;border-radius:4px;margin:3px;font-size:11px;font-weight:600;
+  background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-border)}
+.chip-tag{display:inline-block;padding:2px 9px;border-radius:4px;margin:2px;font-size:10px;
+  background:var(--bg-subtle);color:var(--text-secondary);border:1px solid var(--border);text-transform:uppercase;letter-spacing:.5px}
+</style>
+<script>
+function switchTab(id, el) {
+  document.querySelectorAll('[id^="tab-"]').forEach(d => d.style.display = 'none');
+  document.getElementById('tab-' + id).style.display = '';
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+}
+
+let fCat = 'ALL';
+function setFCat(cat, btn) {
+  fCat = cat;
+  btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.finding-row').forEach(tr => {
+    tr.style.display = (cat === 'ALL' || tr.dataset.cat === cat) ? '' : 'none';
+  });
+}
+
+let victimRisk = 'ALL';
+function filterVictims() {
+  const q = document.getElementById('victim-search').value.toLowerCase();
+  document.querySelectorAll('.victim-row').forEach(tr => {
+    const text  = tr.dataset.name + ' ' + tr.dataset.mobile + ' ' + tr.dataset.bank;
+    const mSrch = !q || text.includes(q);
+    const mRisk = victimRisk === 'ALL' || tr.dataset.risk === victimRisk;
+    tr.style.display = (mSrch && mRisk) ? '' : 'none';
+  });
+}
+function setVRisk(r, btn) {
+  victimRisk = r;
+  btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  filterVictims();
+}
+</script>
+{% endblock %}

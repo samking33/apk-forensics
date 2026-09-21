@@ -1,0 +1,31 @@
+{
+  "_comment": "Known library class-path prefixes (slash form) -> friendly name. Used for SBOM fingerprinting.",
+  "libraries": {
+    "okhttp3": "OkHttp",
+    "com/squareup/okhttp": "OkHttp (legacy)",
+    "okio": "Okio",
+    "retrofit2": "Retrofit",
+    "com/google/gson": "Gson",
+    "com/fasterxml/jackson": "Jackson",
+    "com/android/volley": "Volley",
+    "com/bumptech/glide": "Glide",
+    "com/squareup/picasso": "Picasso",
+    "com/facebook/fresco": "Fresco",
+    "io/reactivex": "RxJava",
+    "kotlin": "Kotlin stdlib",
+    "kotlinx/coroutines": "Kotlin Coroutines",
+    "androidx": "AndroidX",
+    "android/support": "Android Support (legacy)",
+    "com/google/android/material": "Material Components",
+    "dagger": "Dagger",
+    "org/apache/http": "Apache HttpClient",
+    "org/greenrobot/eventbus": "EventBus",
+    "com/airbnb/lottie": "Lottie",
+    "org/koin": "Koin",
+    "io/flutter": "Flutter",
+    "com/facebook/react": "React Native",
+    "org/cocos2dx": "Cocos2d-x",
+    "com/unity3d/player": "Unity Engine",
+    "org/apache/cordova": "Apache Cordova"
+  }
+}

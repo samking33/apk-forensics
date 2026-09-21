@@ -1,0 +1,33 @@
+{
+  "_comment": "Curated subset of Exodus Privacy tracker signatures. signature = class-path prefix (slash form) matched against DEX class names.",
+  "trackers": [
+    {"name": "Google Firebase Analytics",   "category": "Analytics",      "signature": "com/google/firebase/analytics"},
+    {"name": "Google CrashLytics",           "category": "Crash",          "signature": "com/google/firebase/crashlytics"},
+    {"name": "Google AdMob",                 "category": "Advertisement",  "signature": "com/google/android/gms/ads"},
+    {"name": "Google Analytics",             "category": "Analytics",      "signature": "com/google/android/gms/analytics"},
+    {"name": "Google Tag Manager",           "category": "Analytics",      "signature": "com/google/android/gms/tagmanager"},
+    {"name": "Facebook Ads",                 "category": "Advertisement",  "signature": "com/facebook/ads"},
+    {"name": "Facebook Login",               "category": "Identification", "signature": "com/facebook/login"},
+    {"name": "Facebook Analytics",           "category": "Analytics",      "signature": "com/facebook/appevents"},
+    {"name": "Flurry",                       "category": "Analytics",      "signature": "com/flurry"},
+    {"name": "AppsFlyer",                     "category": "Analytics",      "signature": "com/appsflyer"},
+    {"name": "Adjust",                       "category": "Analytics",      "signature": "com/adjust/sdk"},
+    {"name": "Amplitude",                    "category": "Analytics",      "signature": "com/amplitude/api"},
+    {"name": "Mixpanel",                     "category": "Analytics",      "signature": "com/mixpanel/android"},
+    {"name": "Segment",                      "category": "Analytics",      "signature": "com/segment/analytics"},
+    {"name": "Branch",                       "category": "Analytics",      "signature": "io/branch/referral"},
+    {"name": "OneSignal",                    "category": "Advertisement",  "signature": "com/onesignal"},
+    {"name": "Unity3d Ads",                  "category": "Advertisement",  "signature": "com/unity3d/ads"},
+    {"name": "AppLovin",                     "category": "Advertisement",  "signature": "com/applovin"},
+    {"name": "ironSource",                   "category": "Advertisement",  "signature": "com/ironsource"},
+    {"name": "Vungle",                       "category": "Advertisement",  "signature": "com/vungle"},
+    {"name": "InMobi",                       "category": "Advertisement",  "signature": "com/inmobi"},
+    {"name": "Yandex Metrica",               "category": "Analytics",      "signature": "com/yandex/metrica"},
+    {"name": "Umeng",                        "category": "Analytics",      "signature": "com/umeng"},
+    {"name": "Tencent Stat",                 "category": "Analytics",      "signature": "com/tencent/stat"},
+    {"name": "Bugsnag",                      "category": "Crash",          "signature": "com/bugsnag/android"},
+    {"name": "Sentry",                       "category": "Crash",          "signature": "io/sentry"},
+    {"name": "HyperSnapSDK",                 "category": "Identification",  "signature": "com/hyperverge"},
+    {"name": "Sinch",                        "category": "Identification",  "signature": "com/sinch/android"}
+  ]
+}

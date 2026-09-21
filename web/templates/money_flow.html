@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Money Flow Graph — {{ apk.filename }}{% endblock %}
+{% block breadcrumb %}
+<a href="/">Dashboard</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<a href="/case/{{ apk.id }}">{{ apk.filename }}</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<span class="current">Money Flow</span>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div class="page-heading">
+    <div class="page-title">
+      <i class="fa-solid fa-diagram-project" style="color:var(--info);margin-right:8px"></i>
+      Money Flow Graph
+    </div>
+    <div class="page-sub">
+      Directed transaction graph — victims → mule accounts &nbsp;&middot;&nbsp;
+      <a href="/case/{{ apk.id }}">{{ apk.filename }}</a>
+    </div>
+  </div>
+  <div class="page-actions">
+    {% if has_graph %}
+    <a href="/moneyflow/{{ apk.id }}/png" target="_blank" class="btn">
+      <i class="fa-solid fa-image"></i> Export PNG
+    </a>
+    <button onclick="runGraph()" class="btn">
+      <i class="fa-solid fa-rotate"></i> Regenerate
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{% if not has_graph %}
+<div class="card">
+  <div class="card-body" style="text-align:center;padding:80px 20px">
+    <div style="font-size:36px;color:var(--border-strong);margin-bottom:14px">
+      <i class="fa-solid fa-diagram-project"></i>
+    </div>
+    <div style="font-size:15px;font-weight:500;color:var(--text-secondary);margin-bottom:6px">Graph not generated yet</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px">
+      Run the financial engine first, then generate the money flow graph
+    </div>
+    <button onclick="runGraph()" class="btn btn-primary" id="gen-btn">
+      <i class="fa-solid fa-play"></i> Generate Graph
+    </button>
+    <span id="graph-status" style="display:none;margin-left:12px;color:var(--text-secondary);font-size:13px"></span>
+  </div>
+</div>
+
+{% else %}
+
+<div class="stats-grid" style="grid-template-columns:repeat(3,1fr);max-width:420px;margin-bottom:20px">
+  <div class="stat-card">
+    <div class="label">Nodes</div>
+    <div class="value blue">{{ graph_data.node_count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Edges</div>
+    <div class="value yellow">{{ graph_data.edge_count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Total Flow</div>
+    <div class="value red" style="font-size:18px">₹ {{ "{:,.0f}".format(graph_data.total_flow) }}</div>
+  </div>
+</div>
+
+<div class="card" style="overflow:visible">
+  <div class="card-header">
+    <div class="hdr-left">
+      <i class="fa-solid fa-share-nodes"></i>
+      Interactive Graph
+      <span class="hdr-count">drag nodes to rearrange</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;font-size:11px;color:var(--text-secondary)">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--danger);margin-right:4px"></span>Victims</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--warning);margin-right:4px"></span>Mule Accounts</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--info);margin-right:4px"></span>Named Recipients</span>
+    </div>
+  </div>
+  <div id="graph-container" style="width:100%;height:600px;background:var(--bg);position:relative;border-radius:0 0 8px 8px;overflow:hidden">
+    <svg id="graph-svg" style="width:100%;height:100%"></svg>
+    <div id="tooltip" style="position:absolute;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:12px;pointer-events:none;display:none;max-width:260px;z-index:10;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+{% if has_graph %}
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+const graphData = {{ graph_data | tojson }};
+
+const typeColor = { victim: 'var(--danger)', mule: 'var(--warning)', recipient: 'var(--info)' };
+const typeSize  = { victim: 5, mule: 14, recipient: 9 };
+const typeColorHex = { victim: '#e05151', mule: '#c99a2e', recipient: '#4f8ef5' };
+
+const container = document.getElementById('graph-container');
+const svg       = d3.select('#graph-svg');
+const W = container.offsetWidth, H = 600;
+const tooltip = document.getElementById('tooltip');
+
+const g = svg.append('g');
+svg.call(d3.zoom().scaleExtent([0.1, 4]).on('zoom', e => g.attr('transform', e.transform)));
+
+const defs = svg.append('defs');
+['victim','mule','recipient'].forEach(t => {
+  defs.append('marker')
+    .attr('id', 'arrow-'+t).attr('viewBox','0 -4 8 8').attr('refX', 20).attr('refY', 0)
+    .attr('markerWidth', 5).attr('markerHeight', 5).attr('orient', 'auto')
+    .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', typeColorHex[t] || '#30363d').attr('opacity', 0.4);
+});
+
+const sim = d3.forceSimulation(graphData.nodes)
+  .force('link',    d3.forceLink(graphData.links).id(d => d.id).distance(130))
+  .force('charge',  d3.forceManyBody().strength(-250))
+  .force('center',  d3.forceCenter(W / 2, H / 2))
+  .force('collide', d3.forceCollide(22));
+
+const link = g.append('g').selectAll('line')
+  .data(graphData.links).join('line')
+  .attr('stroke', '#252f47')
+  .attr('stroke-width', d => Math.max(0.5, Math.log1p(d.amount / 1000)))
+  .attr('marker-end', d => 'url(#arrow-' + (d.source.type || 'victim') + ')');
+
+const node = g.append('g').selectAll('circle')
+  .data(graphData.nodes).join('circle')
+  .attr('r',      d => typeSize[d.type] || 7)
+  .attr('fill',   d => typeColorHex[d.type] || '#8b949e')
+  .attr('stroke', '#0f1117').attr('stroke-width', 1.5)
+  .style('cursor', 'grab')
+  .call(d3.drag()
+    .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+    .on('drag',  (e, d) => { d.fx = e.x; d.fy = e.y; })
+    .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
+  )
+  .on('mouseover', (e, d) => {
+    const amt = d.total_recv || d.total_lost || 0;
+    const rect = container.getBoundingClientRect();
+    tooltip.innerHTML = `
+      <div style="font-weight:600;margin-bottom:4px;color:var(--text)">${d.label}</div>
+      <div style="color:var(--text-secondary)">Type: <strong>${d.type}</strong></div>
+      <div style="color:var(--text-secondary)">${d.type !== 'victim' ? 'Received' : 'Lost'}: <strong style="color:var(--danger)">₹${amt.toLocaleString('en-IN')}</strong></div>
+      ${d.victim_count ? `<div style="color:var(--text-secondary)">Victims: <strong>${d.victim_count}</strong></div>` : ''}
+    `;
+    tooltip.style.display = 'block';
+    tooltip.style.left    = (e.clientX - rect.left + 14) + 'px';
+    tooltip.style.top     = (e.clientY - rect.top  + 14) + 'px';
+  })
+  .on('mouseout', () => tooltip.style.display = 'none');
+
+const label = g.append('g').selectAll('text')
+  .data(graphData.nodes.filter(d => d.type !== 'victim')).join('text')
+  .text(d => d.label.slice(0, 28))
+  .attr('font-size', '9px')
+  .attr('font-family', 'var(--font-mono)')
+  .attr('fill', '#7e8da8')
+  .attr('text-anchor', 'middle')
+  .attr('dy', '22px');
+
+sim.on('tick', () => {
+  link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+  node.attr('cx', d => d.x).attr('cy', d => d.y);
+  label.attr('x', d => d.x).attr('y', d => d.y);
+});
+</script>
+{% endif %}
+<script>
+async function runGraph() {
+  const btn  = document.getElementById('gen-btn');
+  const stat = document.getElementById('graph-status');
+  if (btn)  { btn.innerHTML = '<span class="spinner"></span> Generating…'; btn.disabled = true; }
+  if (stat) { stat.style.display = 'inline'; stat.textContent = 'Generating graph…'; }
+
+  const r = await fetch('/api/moneyflow/run/{{ apk.id }}', {method: 'POST'});
+  if (r.ok) { window.location.reload(); }
+  else {
+    alert('Error: Run the financial engine first.');
+    if (btn)  { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-play"></i> Generate Graph'; }
+    if (stat) { stat.textContent = 'Failed — run Financial Engine first'; }
+  }
+}
+</script>
+{% endblock %}

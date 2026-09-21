@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Financial Quantum — {{ apk.filename }}{% endblock %}
+{% block breadcrumb %}
+<a href="/">Dashboard</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<a href="/case/{{ apk.id }}">{{ apk.filename }}</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<span class="current">Financial Quantum</span>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div class="page-heading">
+    <div class="page-title">
+      <i class="fa-solid fa-indian-rupee-sign" style="color:var(--warning);margin-right:8px"></i>
+      Financial Quantum Engine
+    </div>
+    <div class="page-sub">
+      Exact financial loss computed from victim SMS evidence &nbsp;&middot;&nbsp;
+      <a href="/case/{{ apk.id }}">{{ apk.filename }}</a>
+    </div>
+  </div>
+  {% if txn_count > 0 %}
+  <div class="page-actions">
+    <a href="/case/{{ apk.id }}/report" class="btn">
+      <i class="fa-solid fa-download"></i> Download Report
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+<div class="stats-grid" style="margin-bottom:24px">
+  <div class="stat-card">
+    <div class="label">Total Loss (INR)</div>
+    <div class="value red" style="font-size:22px">₹ {{ "{:,.0f}".format(total) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">In Crore</div>
+    <div class="value red" style="font-size:22px">₹ {{ "%.4f"|format(total/10000000) }} Cr</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Transactions</div>
+    <div class="value yellow">{{ "{:,}".format(txn_count) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Banks Affected</div>
+    <div class="value blue">{{ per_bank|length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Mule Accounts</div>
+    <div class="value red">{{ mule_rows|length }}</div>
+  </div>
+</div>
+
+{% if txn_count == 0 %}
+<div class="card">
+  <div class="card-body" style="text-align:center;padding:60px 20px">
+    <div style="font-size:36px;color:var(--border-strong);margin-bottom:14px">
+      <i class="fa-solid fa-indian-rupee-sign"></i>
+    </div>
+    <div style="font-size:15px;font-weight:500;color:var(--text-secondary);margin-bottom:6px">No transaction data yet</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px">
+      Run the Financial Quantum engine to parse victim SMS evidence
+    </div>
+    <form method="post" action="/api/financial/run/{{ apk.id }}" id="run-form">
+      <button type="submit" class="btn btn-primary">
+        <i class="fa-solid fa-play"></i> Run Financial Engine
+      </button>
+    </form>
+  </div>
+</div>
+{% else %}
+
+<div class="detail-grid">
+  <div class="card">
+    <div class="card-header">
+      <div class="hdr-left"><i class="fa-solid fa-building-columns"></i> Loss by Bank</div>
+    </div>
+    <table>
+      <thead><tr><th>Bank</th><th>Amount (INR)</th><th style="min-width:140px">Share</th></tr></thead>
+      <tbody>
+      {% for bank, amt in per_bank %}
+      <tr>
+        <td class="fw500">{{ bank }}</td>
+        <td class="fw600 text-danger" style="font-family:var(--font-mono)">₹ {{ "{:,.2f}".format(amt) }}</td>
+        <td>
+          {% set pct = (amt/total*100) if total else 0 %}
+          <div class="risk-bar">
+            <div class="risk-track"><div class="risk-fill" style="width:{{ pct }}%;background:var(--danger)"></div></div>
+            <span style="color:var(--text-muted);font-size:11px;font-family:var(--font-mono)">{{ "%.1f"|format(pct) }}%</span>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="hdr-left"><i class="fa-solid fa-mobile-screen"></i> Transaction Types</div>
+    </div>
+    <table>
+      <thead><tr><th>Type</th><th>Amount (INR)</th></tr></thead>
+      <tbody>
+      {% for ttype, amt in per_type %}
+      <tr>
+        <td><span class="badge badge-info">{{ ttype }}</span></td>
+        <td style="color:var(--warning);font-family:var(--font-mono)">₹ {{ "{:,.2f}".format(amt) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div class="hdr-left">
+      <i class="fa-solid fa-arrows-turn-to-dots"></i>
+      Money Mule Accounts
+      <span class="hdr-count">ranked by amount received</span>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:36px">#</th>
+        <th>UPI ID</th>
+        <th>Bank Handle</th>
+        <th>Amount (INR)</th>
+        <th>Transactions</th>
+        <th>Victims</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in mule_rows %}
+    <tr>
+      <td style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px">{{ loop.index }}</td>
+      <td style="color:var(--warning);font-family:var(--font-mono);font-size:12px">{{ row.upi_id }}</td>
+      <td>
+        {% set parts = row.upi_id.split('@') %}
+        {% if parts|length > 1 %}
+          <span class="badge badge-dim">@{{ parts[-1] }}</span>
+        {% endif %}
+      </td>
+      <td class="fw600 text-danger" style="font-family:var(--font-mono)">₹ {{ "{:,.2f}".format(row.amount) }}</td>
+      <td style="color:var(--text-secondary)">{{ row.count }}</td>
+      <td class="text-danger fw500">{{ row.victim_count }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+const rf = document.getElementById('run-form');
+if (rf) rf.addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = this.querySelector('button');
+  btn.innerHTML = '<span class="spinner"></span> Running engine…';
+  btn.disabled  = true;
+  const r = await fetch(this.action, {method: 'POST'});
+  if (r.ok) { window.location.reload(); }
+  else {
+    const d = await r.json();
+    alert('Error: ' + (d.detail || 'Engine failed'));
+    btn.disabled  = false;
+    btn.innerHTML = '<i class="fa-solid fa-play"></i> Run Financial Engine';
+  }
+});
+</script>
+{% endblock %}

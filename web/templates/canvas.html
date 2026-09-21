@@ -1,0 +1,627 @@
+{% extends "base.html" %}
+{% block title %}Investigation Canvas — {{ apk.filename }}{% endblock %}
+{% block breadcrumb %}
+<a href="/">Dashboard</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<a href="/case/{{ apk.id }}">{{ apk.filename }}</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<span class="current">Investigation Canvas</span>
+{% endblock %}
+
+{% block content %}
+<div class="cv-wrap">
+
+  <div class="cv-toolbar">
+    <div class="cv-toolbar-left">
+      <div class="cv-viewtabs">
+        <button class="cv-viewtab active" id="tab-canvas" onclick="setView('canvas')"><i class="fa-solid fa-table-cells-large"></i> Canvas</button>
+        <button class="cv-viewtab" id="tab-graph" onclick="setView('graph')"><i class="fa-solid fa-diagram-project"></i> Graph</button>
+      </div>
+      <div class="cv-divider"></div>
+      <div class="cv-menu-wrap">
+        <button class="btn btn-sm btn-primary" onclick="toggleAddMenu()"><i class="fa-solid fa-plus"></i> Add card</button>
+        <div id="add-menu" class="cv-menu" style="display:none"></div>
+      </div>
+      <div class="search-bar" style="margin:0;width:200px">
+        <input type="text" id="cv-search" placeholder="Search cards…" oninput="filterCards()">
+        <button class="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
+      </div>
+    </div>
+    <div class="cv-toolbar-right">
+      <button class="cv-icon-btn" id="btn-undo" onclick="undoRemove()" title="Undo remove" disabled><i class="fa-solid fa-rotate-left"></i></button>
+      <span id="cv-savestate" class="text-muted" style="font-size:11px;margin-right:4px"></span>
+      <button class="cv-icon-btn" onclick="clearCanvas()" title="Clear canvas"><i class="fa-solid fa-eraser"></i></button>
+      <button class="cv-icon-btn" onclick="exportCanvas()" title="Export JSON"><i class="fa-solid fa-file-export"></i></button>
+      <button class="btn btn-sm btn-primary" onclick="saveCanvas()"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+    </div>
+  </div>
+
+  <div class="cv-body">
+    <aside class="cv-sidebar">
+      <div class="cv-sidebar-head">Analysis Contents</div>
+      <div class="search-bar" style="margin:0 0 10px">
+        <input type="text" id="cv-obj-search" placeholder="Search…" oninput="renderSidebar()">
+        <button class="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
+      </div>
+      <div class="cv-sidebar-sub">Canvas</div>
+      <div id="cv-objects" class="cv-objects"></div>
+
+      <div class="cv-sidebar-sub" style="margin-top:16px">Parameters</div>
+      <div class="cv-objects">
+        <div class="cv-obj-row static"><span class="cv-badge c-slate">$C1</span><span>Case ID</span></div>
+        <div class="cv-param-val">{{ apk.id[:16] }}…</div>
+        <div class="cv-obj-row static"><span class="cv-badge c-slate">$C2</span><span>Firebase Project</span></div>
+        <div class="cv-param-val">{{ apk.firebase_project or '—' }}</div>
+        <div class="cv-obj-row static"><span class="cv-badge c-slate">$C3</span><span>Package</span></div>
+        <div class="cv-param-val">{{ apk.package_name or '—' }}</div>
+        <div class="cv-obj-row static"><span class="cv-badge c-slate">$C4</span><span>Risk Score</span></div>
+        <div class="cv-param-val">{{ apk.risk_score or 0 }}/100</div>
+      </div>
+    </aside>
+
+    <main class="cv-canvas" id="cv-canvas">
+      <div id="cv-empty" class="cv-empty">
+        <i class="fa-solid fa-diagram-project"></i>
+        <div>No cards on this canvas yet</div>
+        <div class="cv-empty-sub">Add an object from the left, or click "Add card" above.</div>
+      </div>
+      <div id="cv-grid" class="cv-grid"></div>
+      <svg id="cv-graph" class="cv-graph" style="display:none"></svg>
+    </main>
+
+    <aside class="cv-props" id="cv-props" style="display:none">
+      <div class="cv-props-head">
+        <button class="cv-icon-btn" onclick="closeProps()"><i class="fa-solid fa-arrow-left"></i></button>
+        <span id="props-badge" class="cv-badge"></span>
+        <span id="props-title" class="cv-props-title"></span>
+        <button class="cv-icon-btn" onclick="closeProps()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div id="props-kind" class="cv-props-kind"></div>
+      <div class="cv-tabs">
+        <button class="cv-tab active" data-tab="data" onclick="setPropsTab('data')">Data</button>
+        <button class="cv-tab" data-tab="display" onclick="setPropsTab('display')">Display</button>
+        <button class="cv-tab" data-tab="code" onclick="setPropsTab('code')">Code</button>
+        <button class="cv-tab" data-tab="events" onclick="setPropsTab('events')">Events</button>
+      </div>
+      <div id="props-body" class="cv-props-body"></div>
+      <div class="cv-props-deps">
+        <div class="cv-sidebar-head">Dependencies</div>
+        <div id="props-deps"></div>
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.cv-wrap{display:flex;flex-direction:column;height:calc(100vh - var(--topbar-height) - 40px)}
+.cv-toolbar{display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;
+  border-bottom:1px solid var(--border);margin-bottom:12px;flex-shrink:0}
+.cv-toolbar-left{display:flex;align-items:center;gap:10px}
+.cv-toolbar-right{display:flex;align-items:center;gap:4px}
+.cv-divider{width:1px;height:20px;background:var(--border)}
+
+.cv-viewtabs{display:flex;border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.cv-viewtab{background:var(--bg-card);border:none;border-right:1px solid var(--border);color:var(--text-muted);
+  padding:6px 12px;font-size:11px;cursor:pointer;display:flex;align-items:center;gap:6px}
+.cv-viewtab:last-child{border-right:none}
+.cv-viewtab.active{background:var(--info-bg);color:var(--accent)}
+.cv-viewtab:hover:not(.active){color:var(--text)}
+
+.cv-icon-btn{width:28px;height:28px;border:1px solid transparent;background:none;color:var(--text-muted);
+  border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px}
+.cv-icon-btn:hover:not(:disabled){background:var(--bg-hover);color:var(--text);border-color:var(--border)}
+.cv-icon-btn:disabled{opacity:.3;cursor:default}
+
+.cv-menu-wrap{position:relative}
+.cv-menu{position:absolute;top:calc(100% + 6px);left:0;background:var(--bg-card);border:1px solid var(--border);
+  border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.4);z-index:40;width:270px;padding:6px;max-height:380px;overflow-y:auto}
+.cv-menu-item{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:4px;cursor:pointer;font-size:12px}
+.cv-menu-item:hover{background:var(--bg-hover)}
+.cv-menu-item .cnt{margin-left:auto;color:var(--text-muted);font-size:10px;font-family:var(--font-mono)}
+.cv-menu-item i.obj-icon{width:14px;text-align:center;color:var(--text-muted);font-size:11px}
+
+.cv-body{display:flex;flex:1;min-height:0;gap:14px}
+.cv-sidebar{width:220px;flex-shrink:0;overflow-y:auto}
+.cv-sidebar-head{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:8px}
+.cv-sidebar-sub{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);
+  margin:4px 0 6px;padding-top:2px;opacity:.7}
+.cv-objects{display:flex;flex-direction:column;gap:2px}
+.cv-obj-row{display:flex;align-items:center;gap:7px;padding:6px 7px;border-radius:4px;cursor:pointer;font-size:11.5px;
+  border:1px solid transparent;color:var(--text-secondary)}
+.cv-obj-row:hover{background:var(--bg-hover);color:var(--text)}
+.cv-obj-row.active{border-color:var(--accent);background:var(--info-bg);color:var(--text)}
+.cv-obj-row.static{cursor:default;padding-bottom:2px}
+.cv-obj-row.static:hover{background:none;color:var(--text-secondary)}
+.cv-obj-row .cnt{margin-left:auto;color:var(--text-muted);font-size:9px;font-family:var(--font-mono)}
+.cv-obj-row i.obj-icon{width:12px;text-align:center;color:var(--text-muted);font-size:10px;flex-shrink:0}
+.cv-param-val{font-family:var(--font-mono);font-size:10px;color:var(--text-muted);padding:0 7px 6px 33px;
+  word-break:break-all}
+
+.cv-badge{display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:17px;padding:0 5px;
+  border-radius:3px;font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:.3px;border:1px solid;flex-shrink:0}
+.cv-badge.c-danger{background:var(--danger-bg);color:var(--danger);border-color:var(--danger-border)}
+.cv-badge.c-warning{background:var(--warning-bg);color:var(--warning);border-color:var(--warning-border)}
+.cv-badge.c-success{background:var(--success-bg);color:var(--success);border-color:var(--success-border)}
+.cv-badge.c-info{background:var(--info-bg);color:var(--info);border-color:var(--info-border)}
+.cv-badge.c-purple{background:rgba(155,127,214,.12);color:#9b7fd6;border-color:rgba(155,127,214,.35)}
+.cv-badge.c-teal{background:rgba(77,191,184,.12);color:#4dbfb8;border-color:rgba(77,191,184,.35)}
+.cv-badge.c-slate{background:var(--bg-subtle);color:var(--text-muted);border-color:var(--border)}
+.cv-badge.selected{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+.cv-canvas{flex:1;min-width:0;overflow-y:auto;position:relative}
+.cv-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  color:var(--text-muted);gap:8px;text-align:center}
+.cv-empty i{font-size:30px;opacity:.3}
+.cv-empty-sub{font-size:12px}
+.cv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;align-items:start}
+
+.cv-card{background:var(--bg-card);border:1px solid var(--border);border-radius:6px;overflow:hidden;
+  display:flex;flex-direction:column}
+.cv-card.wide{grid-column:span 2}
+.cv-card.dim{opacity:.25}
+.cv-card.fullscreen{position:fixed;inset:16px;z-index:100;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.cv-fs-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99;display:none}
+.cv-fs-backdrop.show{display:block}
+
+.cv-card-head{display:flex;align-items:center;gap:6px;padding:7px 8px;border-bottom:1px solid var(--border);
+  cursor:grab;background:var(--bg-subtle)}
+.cv-card-head:active{cursor:grabbing}
+.cv-grip{color:var(--text-muted);font-size:10px;opacity:.5;flex-shrink:0}
+.cv-card-titlewrap{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
+.cv-card-title{font-size:11.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cv-card-tag{font-size:8.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;
+  border:1px solid var(--border);border-radius:2px;padding:0 4px;display:inline-block;width:fit-content}
+.cv-card-actions{margin-left:auto;display:flex;gap:1px;flex-shrink:0}
+.cv-card-actions button{width:21px;height:21px;border:none;background:none;color:var(--text-muted);
+  border-radius:3px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:10px}
+.cv-card-actions button:hover{background:var(--bg-hover);color:var(--text)}
+.cv-card-body{padding:11px;min-height:76px;overflow:auto;flex:1}
+.cv-stat{font-family:var(--font-display);font-size:23px;font-weight:700;color:var(--text)}
+.cv-stat-label{font-size:9.5px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px}
+
+.cv-bar-row{display:flex;align-items:center;gap:8px;font-size:11px;margin:4px 0}
+.cv-bar-label{width:88px;flex-shrink:0;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cv-bar-track{flex:1;height:13px;background:var(--bg-hover);border-radius:2px;overflow:hidden}
+.cv-bar-fill{height:100%;border-radius:2px}
+.cv-bar-val{width:44px;text-align:right;font-family:var(--font-mono);color:var(--text-muted);flex-shrink:0}
+
+.cv-table{width:100%;border-collapse:collapse;font-size:11px}
+.cv-table th{text-align:left;color:var(--text-muted);text-transform:uppercase;letter-spacing:.4px;
+  font-size:9px;padding:4px 6px;position:sticky;top:0;background:var(--bg-card)}
+.cv-table td{padding:4px 6px;border-top:1px solid var(--border-muted);color:var(--text-secondary)}
+.cv-table-wrap{max-height:220px;overflow:auto}
+
+.cv-hm{display:grid;grid-template-columns:28px repeat(7,1fr);gap:2px;font-size:9px}
+.cv-hm-h{color:var(--text-muted);text-align:center}
+.cv-hm-cell{aspect-ratio:1;border-radius:2px;background:var(--bg-hover)}
+.cv-hm-hr{color:var(--text-muted);text-align:right;padding-right:3px;font-family:var(--font-mono);font-size:8px}
+
+.cv-empty-obj{color:var(--text-muted);font-size:12px;text-align:center;padding:16px}
+
+.cv-graph{width:100%;height:100%}
+.cv-gnode{cursor:pointer}
+.cv-gnode rect{fill:var(--bg-card);stroke:var(--border);stroke-width:1;rx:4}
+.cv-gnode:hover rect{stroke:var(--accent)}
+.cv-gnode text{fill:var(--text);font-size:11px;font-family:var(--font-ui)}
+.cv-gedge{stroke:var(--border-strong);stroke-width:1.2;fill:none;marker-end:url(#cv-arrow)}
+
+.cv-props{width:300px;flex-shrink:0;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;
+  display:flex;flex-direction:column;overflow:hidden}
+.cv-props-head{display:flex;align-items:center;gap:8px;padding:10px;border-bottom:1px solid var(--border)}
+.cv-props-title{font-size:12px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cv-props-kind{padding:6px 10px;font-size:10px;color:var(--text-muted);border-bottom:1px solid var(--border)}
+.cv-tabs{display:flex;border-bottom:1px solid var(--border)}
+.cv-tab{flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);
+  padding:8px 4px;font-size:11px;cursor:pointer}
+.cv-tab.active{color:var(--accent);border-color:var(--accent)}
+.cv-tab:hover:not(.active){color:var(--text)}
+.cv-props-body{padding:12px;font-size:12px;color:var(--text-secondary);overflow-y:auto;flex-shrink:0;max-height:260px}
+.cv-props-body .lbl{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin:8px 0 3px}
+.cv-props-body .lbl:first-child{margin-top:0}
+.cv-props-body code{display:block;background:var(--bg);border:1px solid var(--border);border-radius:4px;
+  padding:6px 8px;font-family:var(--font-mono);font-size:10px;word-break:break-all;color:var(--accent)}
+.cv-props-body pre{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px;
+  font-family:var(--font-mono);font-size:9.5px;overflow:auto;max-height:140px;color:var(--text-secondary)}
+.cv-props-deps{padding:10px;border-top:1px solid var(--border)}
+.cv-dep-row{display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:4px;cursor:pointer;font-size:11px}
+.cv-dep-row:hover{background:var(--bg-hover)}
+</style>
+<script>
+const APK_ID = "{{ apk.id }}";
+const LS_KEY = 'fsoc_canvas_' + APK_ID;
+let CATALOG = [];
+let ON_CANVAS = new Set();
+let CARD_STATE = {};   // key -> {data, addedAt, refreshedAt}
+let LAST_REMOVED = null;
+let ACTIVE_PROPS_KEY = null;
+let CURRENT_VIEW = 'canvas';
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function nowStr(){ return new Date().toLocaleTimeString(); }
+function catalogOf(key){ return CATALOG.find(o=>o.key===key); }
+
+async function loadCatalog(){
+  const r = await (await fetch(`/api/canvas/${APK_ID}/objects`)).json();
+  CATALOG = r.objects;
+  renderSidebar();
+  renderAddMenu();
+  restoreLayout();
+}
+
+function renderSidebar(){
+  const q = (document.getElementById('cv-obj-search')?.value || '').toLowerCase();
+  const box = document.getElementById('cv-objects');
+  box.innerHTML = CATALOG.filter(o=>!q || o.label.toLowerCase().includes(q)).map(o => `
+    <div class="cv-obj-row ${ON_CANVAS.has(o.key)?'active':''}" id="side-${o.key}" onclick="addCard('${o.key}')">
+      <span class="cv-badge c-${o.color}">${o.code}</span>
+      <i class="fa-solid ${o.icon} obj-icon"></i>
+      <span>${esc(o.label)}</span>
+      ${o.count!==undefined?`<span class="cnt">${o.count.toLocaleString()}</span>`:''}
+    </div>`).join('');
+}
+
+function renderAddMenu(){
+  const box = document.getElementById('add-menu');
+  box.innerHTML = CATALOG.map(o => `
+    <div class="cv-menu-item" onclick="addCard('${o.key}');toggleAddMenu(true)">
+      <span class="cv-badge c-${o.color}">${o.code}</span>
+      <i class="fa-solid ${o.icon} obj-icon"></i>
+      <span>${esc(o.label)}</span>
+      ${o.count!==undefined?`<span class="cnt">${o.count.toLocaleString()}</span>`:''}
+    </div>`).join('');
+}
+
+function toggleAddMenu(forceClose){
+  const m = document.getElementById('add-menu');
+  m.style.display = (forceClose || m.style.display!=='none') ? 'none' : 'block';
+}
+document.addEventListener('click', e=>{
+  if(!e.target.closest('.cv-menu-wrap')) toggleAddMenu(true);
+});
+
+const KIND_LABEL = {bar:'Bar chart', timeseries:'Time series chart', heatmap:'Heat grid', table:'Object table', chips:'Tag list'};
+
+async function addCard(key, opts){
+  opts = opts || {};
+  if(ON_CANVAS.has(key)){
+    document.getElementById('card-'+key)?.scrollIntoView({behavior:'smooth', block:'center'});
+    return;
+  }
+  const meta = catalogOf(key);
+  if(!meta) return;
+  ON_CANVAS.add(key);
+  CARD_STATE[key] = {data:null, addedAt: nowStr(), refreshedAt: null};
+  document.getElementById('cv-empty').style.display = 'none';
+  const grid = document.getElementById('cv-grid');
+
+  const card = document.createElement('div');
+  card.className = 'cv-card';
+  card.id = 'card-'+key;
+  card.draggable = true;
+  card.dataset.key = key;
+  card.innerHTML = `
+    <div class="cv-card-head" draggable="true">
+      <i class="fa-solid fa-grip-vertical cv-grip"></i>
+      <span class="cv-badge c-${meta.color}">${meta.code}</span>
+      <div class="cv-card-titlewrap">
+        <span class="cv-card-title">${esc(meta.label)}</span>
+        <span class="cv-card-tag" id="tag-${key}">…</span>
+      </div>
+      <div class="cv-card-actions">
+        <button onclick="toggleFullscreen('${key}')" title="Expand"><i class="fa-solid fa-expand"></i></button>
+        <button onclick="pinTop('${key}')" title="Pin to top"><i class="fa-solid fa-thumbtack"></i></button>
+        <button onclick="openProps('${key}')" title="Properties"><i class="fa-solid fa-gear"></i></button>
+        <button onclick="removeCard('${key}')" title="Remove"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    </div>
+    <div class="cv-card-body"><span class="text-muted" style="font-size:11px"><span class="spinner" style="width:11px;height:11px"></span> loading…</span></div>`;
+  wireDrag(card);
+  if(opts.prepend) grid.insertBefore(card, grid.firstChild); else grid.appendChild(card);
+  renderSidebar();
+  await refreshCard(key);
+}
+
+async function refreshCard(key){
+  const card = document.getElementById('card-'+key);
+  if(!card) return;
+  try{
+    const data = await (await fetch(`/api/canvas/${APK_ID}/data/${key}`)).json();
+    CARD_STATE[key].data = data;
+    CARD_STATE[key].refreshedAt = nowStr();
+    renderCardBody(card.querySelector('.cv-card-body'), data);
+    const tag = document.getElementById('tag-'+key);
+    if(tag) tag.textContent = KIND_LABEL[data.kind] || data.kind || '';
+    if(ACTIVE_PROPS_KEY === key) renderProps(key);
+  }catch(e){
+    card.querySelector('.cv-card-body').innerHTML = '<span class="text-danger" style="font-size:11px">Failed to load</span>';
+  }
+}
+
+function removeCard(key){
+  const card = document.getElementById('card-'+key);
+  LAST_REMOVED = {key, wide: card?.classList.contains('wide'), index: [...document.getElementById('cv-grid').children].indexOf(card)};
+  document.getElementById('btn-undo').disabled = false;
+  ON_CANVAS.delete(key);
+  card?.remove();
+  if(ACTIVE_PROPS_KEY === key) closeProps();
+  renderSidebar();
+  if(!ON_CANVAS.size) document.getElementById('cv-empty').style.display = 'flex';
+}
+
+async function undoRemove(){
+  if(!LAST_REMOVED) return;
+  await addCard(LAST_REMOVED.key);
+  if(LAST_REMOVED.wide) document.getElementById('card-'+LAST_REMOVED.key)?.classList.add('wide');
+  LAST_REMOVED = null;
+  document.getElementById('btn-undo').disabled = true;
+}
+
+function pinTop(key){
+  const grid = document.getElementById('cv-grid');
+  const card = document.getElementById('card-'+key);
+  if(card) grid.insertBefore(card, grid.firstChild);
+}
+
+function toggleFullscreen(key){
+  const card = document.getElementById('card-'+key);
+  if(!card) return;
+  const backdrop = ensureBackdrop();
+  const isFs = card.classList.toggle('fullscreen');
+  backdrop.classList.toggle('show', isFs);
+  backdrop.onclick = () => { card.classList.remove('fullscreen'); backdrop.classList.remove('show'); };
+}
+function ensureBackdrop(){
+  let b = document.getElementById('cv-fs-backdrop');
+  if(!b){ b = document.createElement('div'); b.id='cv-fs-backdrop'; b.className='cv-fs-backdrop'; document.body.appendChild(b); }
+  return b;
+}
+
+function clearCanvas(){
+  ON_CANVAS.forEach(k => document.getElementById('card-'+k)?.remove());
+  ON_CANVAS.clear();
+  closeProps();
+  renderSidebar();
+  document.getElementById('cv-empty').style.display = 'flex';
+}
+
+function exportCanvas(){
+  const payload = [...ON_CANVAS].map(k => ({key:k, ...CARD_STATE[k]}));
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `canvas_${APK_ID.slice(0,12)}.json`;
+  a.click();
+}
+
+// ── Card body renderers — dispatch on `kind`, one function per chart type ──
+function renderCardBody(el, data){
+  let html = '';
+  if(data.stat) html += `<div class="cv-stat-label">${esc(data.stat.label)}</div><div class="cv-stat" style="margin-bottom:10px">${esc(String(data.stat.value))}</div>`;
+
+  if(data.kind === 'bar') html += renderBar(data.bars);
+  else if(data.kind === 'timeseries') html += renderTimeseries(data.points);
+  else if(data.kind === 'heatmap') html += renderHeatmap(data.rows, data.cols, data.matrix);
+  else if(data.kind === 'table') html += renderTable(data.columns, data.rows);
+  else if(data.kind === 'chips') html += renderChips(data.items);
+
+  el.innerHTML = html || '<span class="cv-empty-obj">No data</span>';
+}
+
+const SEVC = {danger:'var(--danger)', warning:'var(--warning)', success:'var(--success)', info:'var(--info)', dim:'var(--text-muted)'};
+
+function renderBar(bars){
+  if(!bars || !bars.length) return '<span class="cv-empty-obj">No data</span>';
+  const max = Math.max(...bars.map(b=>b.value), 1);
+  return bars.map(b => `
+    <div class="cv-bar-row">
+      <span class="cv-bar-label" title="${esc(b.label)}">${esc(b.label)}</span>
+      <span class="cv-bar-track"><span class="cv-bar-fill" style="width:${(b.value/max*100).toFixed(1)}%;background:${SEVC[b.color]||'var(--accent)'}"></span></span>
+      <span class="cv-bar-val">${b.value.toLocaleString()}</span>
+    </div>`).join('');
+}
+
+function renderTimeseries(points){
+  if(!points || points.length < 2) return '<span class="cv-empty-obj">Not enough data points</span>';
+  const w=300, h=110, pad=6;
+  const vals = points.map(p=>p.v);
+  const maxV = Math.max(...vals, 1), minV = Math.min(...vals, 0);
+  const range = (maxV - minV) || 1;
+  const step = (w - pad*2) / (points.length - 1);
+  const xy = points.map((p,i) => [pad + i*step, h - pad - ((p.v-minV)/range)*(h-pad*2)]);
+  const line = xy.map((p,i) => (i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
+  const area = line + ` L${xy[xy.length-1][0].toFixed(1)},${h-pad} L${xy[0][0].toFixed(1)},${h-pad} Z`;
+  const dots = xy.map((p,i) => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="1.6" fill="var(--accent)"><title>${esc(points[i].t)}: ${points[i].v}</title></circle>`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:110px">
+    <path d="${area}" fill="var(--accent)" opacity="0.12"></path>
+    <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.5"></path>
+    ${dots}
+  </svg>
+  <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-muted);font-family:var(--font-mono)">
+    <span>${esc(points[0].t)}</span><span>${esc(points[points.length-1].t)}</span>
+  </div>`;
+}
+
+function renderHeatmap(rows, cols, matrix){
+  const flat = matrix.flat();
+  const max = Math.max(...flat, 1);
+  let html = `<div class="cv-hm"><div></div>${cols.map(c=>`<div class="cv-hm-h">${esc(c)}</div>`).join('')}`;
+  rows.forEach((r,ri) => {
+    html += `<div class="cv-hm-hr">${r}</div>`;
+    cols.forEach((c,ci) => {
+      const v = matrix[ri][ci];
+      const op = v ? (0.15 + (v/max)*0.85).toFixed(2) : 0;
+      html += `<div class="cv-hm-cell" style="background:rgba(224,155,32,${op})" title="${esc(c)} ${r}:00 — ${v}"></div>`;
+    });
+  });
+  html += '</div>';
+  return html;
+}
+
+function renderTable(columns, rows){
+  if(!rows || !rows.length) return '<span class="cv-empty-obj">No data</span>';
+  const head = '<tr>'+columns.map(c=>`<th>${esc(c)}</th>`).join('')+'</tr>';
+  const body = rows.map(r=>'<tr>'+r.map(v=>`<td>${esc(v)}</td>`).join('')+'</tr>').join('');
+  return `<div class="cv-table-wrap"><table class="cv-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+
+function renderChips(items){
+  if(!items || !items.length) return '<span class="cv-empty-obj">None detected</span>';
+  return items.map(i => `<span class="chip-crit" style="display:inline-block;padding:3px 10px;border-radius:4px;margin:3px;
+    font-size:11px;font-weight:600;background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-border)">
+    ${esc(String(i).replace(/_/g,' '))}</span>`).join('');
+}
+
+// ── Properties panel ──
+function openProps(key){
+  ACTIVE_PROPS_KEY = key;
+  document.getElementById('cv-props').style.display = 'flex';
+  document.querySelectorAll('.cv-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab==='data'));
+  renderProps(key);
+}
+function closeProps(){
+  ACTIVE_PROPS_KEY = null;
+  document.getElementById('cv-props').style.display = 'none';
+}
+function setPropsTab(tab){
+  document.querySelectorAll('.cv-tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
+  renderProps(ACTIVE_PROPS_KEY, tab);
+}
+function renderProps(key, tab){
+  if(!key) return;
+  tab = tab || document.querySelector('.cv-tab.active')?.dataset.tab || 'data';
+  const meta = catalogOf(key);
+  const state = CARD_STATE[key] || {};
+  const data = state.data || {};
+  document.getElementById('props-badge').className = 'cv-badge c-'+meta.color;
+  document.getElementById('props-badge').textContent = meta.code;
+  document.getElementById('props-title').textContent = meta.label;
+  document.getElementById('props-kind').innerHTML = `<i class="fa-solid ${meta.icon}"></i>&nbsp; ${KIND_LABEL[data.kind]||'—'}`;
+
+  const body = document.getElementById('props-body');
+  if(tab === 'data'){
+    let html = '';
+    if(data.stat) html += `<div class="lbl">Summary</div>${esc(data.stat.label)}: <strong>${esc(String(data.stat.value))}</strong>`;
+    html += `<div class="lbl">Source</div><code>/api/canvas/${APK_ID}/data/${key}</code>`;
+    html += `<div class="lbl">Actions</div><button class="btn btn-sm" onclick="refreshCard('${key}')" style="width:100%;justify-content:center"><i class="fa-solid fa-rotate"></i> Refresh</button>`;
+    body.innerHTML = html;
+  } else if(tab === 'display'){
+    body.innerHTML = `<div class="lbl">Render kind</div>${esc(KIND_LABEL[data.kind]||data.kind||'—')}
+      <div class="lbl">Card width</div>
+      <button class="btn btn-sm" onclick="document.getElementById('card-${key}').classList.toggle('wide')" style="width:100%;justify-content:center">
+        <i class="fa-solid fa-arrows-left-right"></i> Toggle wide layout</button>`;
+  } else if(tab === 'code'){
+    const pretty = JSON.stringify(data, null, 2);
+    body.innerHTML = `<div class="lbl">Request</div><code>GET /api/canvas/${APK_ID}/data/${key}</code>
+      <div class="lbl">Response</div><pre>${esc(pretty.slice(0,2000))}${pretty.length>2000?'\n…':''}</pre>`;
+  } else if(tab === 'events'){
+    body.innerHTML = `<div class="lbl">Added to canvas</div>${state.addedAt || '—'}
+      <div class="lbl">Last refreshed</div>${state.refreshedAt || '—'}`;
+  }
+
+  const deps = meta.deps || [];
+  document.getElementById('props-deps').innerHTML = deps.length
+    ? deps.map(dk => { const dm = catalogOf(dk); if(!dm) return ''; return `
+      <div class="cv-dep-row" onclick="addCard('${dk}')">
+        <span class="cv-badge c-${dm.color}">${dm.code}</span>
+        <i class="fa-solid ${dm.icon} obj-icon"></i>
+        <span>${esc(dm.label)}</span>
+      </div>`; }).join('')
+    : '<span class="cv-empty-obj" style="padding:8px 0">No upstream dependencies</span>';
+}
+
+// ── Graph view ──
+function setView(view){
+  CURRENT_VIEW = view;
+  document.getElementById('tab-canvas').classList.toggle('active', view==='canvas');
+  document.getElementById('tab-graph').classList.toggle('active', view==='graph');
+  document.getElementById('cv-grid').style.display = view==='canvas' ? 'grid' : 'none';
+  document.getElementById('cv-empty').style.display = (view==='canvas' && !ON_CANVAS.size) ? 'flex' : 'none';
+  document.getElementById('cv-graph').style.display = view==='graph' ? 'block' : 'none';
+  if(view==='graph') renderGraph();
+}
+
+function renderGraph(){
+  const svg = document.getElementById('cv-graph');
+  const roots = CATALOG.filter(o => !o.deps || !o.deps.length);
+  const leaves = CATALOG.filter(o => o.deps && o.deps.length);
+  const colW = 220, rowH = 56, nodeW = 168, nodeH = 34;
+  const x0 = 40, x1 = x0 + colW + 60;
+  const nodePos = {};
+  roots.forEach((o,i) => nodePos[o.key] = {x:x0, y:40+i*rowH});
+  leaves.forEach((o,i) => nodePos[o.key] = {x:x1, y:40+i*rowH});
+  const h = Math.max(roots.length, leaves.length)*rowH + 60;
+
+  let edges = '';
+  leaves.forEach(o => (o.deps||[]).forEach(dk => {
+    const a = nodePos[dk], b = nodePos[o.key];
+    if(!a || !b) return;
+    const x1e = a.x+nodeW, y1e = a.y+nodeH/2, x2e = b.x, y2e = b.y+nodeH/2;
+    const mx = (x1e+x2e)/2;
+    edges += `<path class="cv-gedge" d="M${x1e},${y1e} C${mx},${y1e} ${mx},${y2e} ${x2e},${y2e}"></path>`;
+  }));
+
+  let nodes = '';
+  CATALOG.forEach(o => {
+    const p = nodePos[o.key]; if(!p) return;
+    nodes += `<g class="cv-gnode" onclick="addCard('${o.key}');setView('canvas')" transform="translate(${p.x},${p.y})">
+      <rect width="${nodeW}" height="${nodeH}"></rect>
+      <text x="10" y="21">${esc(o.code)}  ${esc(o.label)}</text>
+    </g>`;
+  });
+
+  svg.setAttribute('viewBox', `0 0 ${x1+colW} ${h}`);
+  svg.innerHTML = `<defs><marker id="cv-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L7,3 L0,6 Z" fill="var(--border-strong)"></path></marker></defs>${edges}${nodes}`;
+}
+
+// ── Drag-to-reorder (native HTML5 DnD) ──
+let dragEl = null;
+function wireDrag(card){
+  card.addEventListener('dragstart', ()=>{ dragEl = card; card.style.opacity='.4'; });
+  card.addEventListener('dragend', ()=>{ dragEl = null; card.style.opacity=''; });
+  card.addEventListener('dragover', e=>{
+    e.preventDefault();
+    if(!dragEl || dragEl===card) return;
+    const grid = document.getElementById('cv-grid');
+    const cards = [...grid.children];
+    if(cards.indexOf(dragEl) < cards.indexOf(card)) grid.insertBefore(dragEl, card.nextSibling);
+    else grid.insertBefore(dragEl, card);
+  });
+}
+
+// ── Search / filter ──
+function filterCards(){
+  const q = document.getElementById('cv-search').value.trim().toLowerCase();
+  document.querySelectorAll('.cv-card').forEach(c => {
+    const title = c.querySelector('.cv-card-title').textContent.toLowerCase();
+    c.classList.toggle('dim', q && !title.includes(q));
+  });
+}
+
+// ── Persistence (local to this workstation) ──
+function saveCanvas(){
+  const order = [...document.getElementById('cv-grid').children].map(c => ({
+    key: c.dataset.key, wide: c.classList.contains('wide')
+  }));
+  localStorage.setItem(LS_KEY, JSON.stringify(order));
+  const s = document.getElementById('cv-savestate');
+  s.textContent = 'Saved locally · ' + nowStr();
+}
+
+function restoreLayout(){
+  const raw = localStorage.getItem(LS_KEY);
+  if(!raw) return;
+  try{
+    const order = JSON.parse(raw);
+    order.forEach(async item => {
+      await addCard(item.key);
+      if(item.wide) document.getElementById('card-'+item.key)?.classList.add('wide');
+    });
+  }catch(e){}
+}
+
+loadCatalog();
+</script>
+{% endblock %}

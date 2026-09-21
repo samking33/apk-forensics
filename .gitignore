@@ -1,0 +1,19 @@
+.glm_key
+
+# Sensitive case data / evidence
+evidence_output/
+tgcsb_cases.db
+FAKE APPS/
+web/uploads/
+APK Forensics Report.txt
+
+# Large downloaded binaries
+tools/frida-server
+tools/frida-server-*
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Reports — {{ apk.filename }}{% endblock %}
+{% block breadcrumb %}
+<a href="/">Dashboard</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<a href="/case/{{ apk.id }}">{{ apk.filename }}</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<span class="current">Download Reports</span>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div class="page-heading">
+    <div class="page-title">
+      <i class="fa-solid fa-file-lines" style="color:var(--info);margin-right:8px"></i>
+      Forensic Reports
+    </div>
+    <div class="page-sub">
+      {{ apk.filename }} &nbsp;&middot;&nbsp;
+      <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">{{ apk.id[:20] }}…</span>
+    </div>
+  </div>
+  <div class="page-actions">
+    <a href="/case/{{ apk.id }}" class="btn">
+      <i class="fa-solid fa-arrow-left"></i> Back to Case
+    </a>
+  </div>
+</div>
+
+<div class="card" style="max-width:600px">
+  <div class="card-header">
+    <div class="hdr-left">
+      <i class="fa-solid fa-download"></i>
+      Generated Files
+    </div>
+    <span class="badge badge-success"><i class="fa-solid fa-circle-check"></i>&nbsp; {{ reports|length }} file{{ 's' if reports|length != 1 }}</span>
+  </div>
+  <div class="card-body" style="padding:12px 0">
+    {% for r in reports %}
+    <a href="/download/{{ apk.id[:16] }}/{{ r.file }}"
+       class="btn"
+       style="display:flex;gap:10px;align-items:center;margin:6px 16px;padding:12px 16px;border-radius:6px;text-decoration:none;font-size:13px">
+      <i class="fa-solid fa-file-lines" style="color:var(--info);flex-shrink:0"></i>
+      <span style="flex:1">{{ r.name }}</span>
+      <i class="fa-solid fa-download" style="color:var(--text-muted);font-size:11px"></i>
+    </a>
+    {% else %}
+    <div style="text-align:center;padding:40px 20px;color:var(--text-muted)">
+      <i class="fa-solid fa-triangle-exclamation" style="font-size:24px;margin-bottom:10px;display:block"></i>
+      No reports generated — re-run analysis
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}C2 Monitor — {{ apk.filename }}{% endblock %}
+{% block breadcrumb %}
+<a href="/">Dashboard</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<a href="/case/{{ apk.id }}">{{ apk.filename }}</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<span class="current">C2 Monitor</span>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div class="page-heading">
+    <div class="page-title">
+      <i class="fa-solid fa-satellite-dish" style="color:var(--accent);margin-right:8px"></i>
+      Real-Time C2 Monitor
+    </div>
+    <div class="page-sub">
+      <span style="font-family:var(--font-mono)">{{ apk.firebase_project }}</span>
+      &nbsp;&middot;&nbsp;
+      <a href="/case/{{ apk.id }}">{{ apk.filename }}</a>
+    </div>
+  </div>
+  <div class="page-actions">
+    {% if active %}
+    <form method="post" action="/api/monitor/stop">
+      <input type="hidden" name="apk_id" value="{{ apk.id }}">
+      <button type="submit" class="btn btn-danger">
+        <i class="fa-solid fa-stop"></i> Stop Monitor
+      </button>
+    </form>
+    {% else %}
+    <form method="post" action="/api/monitor/start" style="display:flex;gap:8px;align-items:center">
+      <input type="hidden" name="apk_id" value="{{ apk.id }}">
+      <select name="interval" class="form-input" style="width:auto;padding:7px 12px">
+        <option value="120">Every 2 min</option>
+        <option value="300" selected>Every 5 min</option>
+        <option value="600">Every 10 min</option>
+        <option value="1800">Every 30 min</option>
+      </select>
+      <button type="submit" class="btn btn-primary">
+        <i class="fa-solid fa-play"></i> Start Monitor
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="stats-grid" style="grid-template-columns:repeat(3,1fr);max-width:480px;margin-bottom:24px">
+  <div class="stat-card">
+    <div class="label">Status</div>
+    {% if active %}
+    <div class="value green" style="font-size:16px;display:flex;align-items:center;gap:8px">
+      <span style="width:8px;height:8px;border-radius:50%;background:var(--success);animation:pulse 2s infinite;display:inline-block"></span>
+      Live
+    </div>
+    {% else %}
+    <div class="value" style="font-size:16px;color:var(--text-muted)">Inactive</div>
+    {% endif %}
+  </div>
+  <div class="stat-card">
+    <div class="label">Total Alerts</div>
+    <div class="value red">{{ alerts|length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Unseen</div>
+    <div class="value yellow">{{ alerts|selectattr('seen','equalto',false)|list|length }}</div>
+  </div>
+</div>
+
+{% if active %}
+<div class="alert alert-info" style="margin-bottom:16px">
+  <i class="fa-solid fa-satellite-dish"></i>
+  Monitor is active — auto-refreshing every 30 seconds.
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    <div class="hdr-left">
+      <i class="fa-solid fa-bell"></i>
+      Alert Feed
+      <span class="hdr-count" id="alert-count">{{ alerts|length }}</span>
+    </div>
+    <button onclick="refreshAlerts()" class="btn btn-sm">
+      <i class="fa-solid fa-rotate"></i> Refresh
+    </button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:160px">Time</th>
+        <th style="width:110px">Severity</th>
+        <th style="width:140px">Type</th>
+        <th>Message</th>
+        <th style="width:48px"></th>
+      </tr>
+    </thead>
+    <tbody id="alert-body">
+    {% for a in alerts %}
+    <tr id="alert-{{ a.id }}" onclick="viewAlert({{ a.id }}, this)" style="cursor:pointer{% if not a.seen %};background:rgba(224,81,81,.04){% endif %}">
+      <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);white-space:nowrap">
+        <i class="fa-solid fa-chevron-right" style="font-size:9px;margin-right:6px;opacity:.5"></i>{{ a.created_at[:19] if a.created_at else '—' }}
+      </td>
+      <td>
+        {% set lc = 'danger' if a.severity=='CRITICAL' else 'warning' if a.severity=='HIGH' else 'info' %}
+        <span class="badge badge-{{ lc }}">{{ a.severity }}</span>
+      </td>
+      <td><span class="badge badge-dim">{{ a.alert_type }}</span></td>
+      <td style="white-space:normal;max-width:500px;font-size:13px">{{ a.message }}</td>
+      <td>
+        {% if not a.seen %}
+        <button onclick="event.stopPropagation();markSeen({{ a.id }})" class="btn btn-sm" title="Mark as seen">
+          <i class="fa-solid fa-check"></i>
+        </button>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr id="empty-row">
+      <td colspan="5" style="text-align:center;color:var(--text-muted);padding:60px 20px">
+        <i class="fa-solid fa-bell-slash" style="font-size:24px;display:block;margin-bottom:10px;opacity:.3"></i>
+        No alerts yet. Start the monitor to watch for new C2 activity.
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+{% if active %}setInterval(refreshAlerts, 30000);{% endif %}
+
+async function refreshAlerts() {
+  const r      = await fetch('/api/monitor/alerts/{{ apk.id }}');
+  const alerts = await r.json();
+  const tbody  = document.getElementById('alert-body');
+  document.getElementById('alert-count').textContent = alerts.length;
+
+  if (!alerts.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:60px 20px">No alerts yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = '';
+  for (const a of alerts) {
+    const lc = a.severity === 'CRITICAL' ? 'danger' : a.severity === 'HIGH' ? 'warning' : 'info';
+    tbody.innerHTML += `
+    <tr id="alert-${a.id}" onclick="viewAlert(${a.id}, this)" style="cursor:pointer${!a.seen ? ';background:rgba(224,81,81,.04)' : ''}">
+      <td style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted);white-space:nowrap">
+        <i class="fa-solid fa-chevron-right" style="font-size:9px;margin-right:6px;opacity:.5"></i>${(a.created_at||'').slice(0,19)}
+      </td>
+      <td><span class="badge badge-${lc}">${a.severity}</span></td>
+      <td><span class="badge badge-dim">${a.alert_type}</span></td>
+      <td style="white-space:normal;max-width:500px;font-size:13px">${escHtml(a.message)}</td>
+      <td>${!a.seen ? `<button onclick="event.stopPropagation();markSeen(${a.id})" class="btn btn-sm"><i class="fa-solid fa-check"></i></button>` : ''}</td>
+    </tr>`;
+  }
+}
+
+async function viewAlert(id, row){
+  const existing = document.getElementById('adetail-'+id);
+  if(existing){ existing.remove(); return; }   // toggle closed
+  const det = document.createElement('tr');
+  det.id = 'adetail-'+id;
+  det.innerHTML = '<td colspan="5" style="padding:0;background:var(--bg)"><div class="adbody" style="padding:14px 20px">'
+    + '<span class="spinner" style="width:12px;height:12px"></span> loading live detail…</div></td>';
+  row.after(det);
+  try{
+    const d = await (await fetch('/api/monitor/alert/'+id)).json();
+    det.querySelector('.adbody').innerHTML = renderAlertDetail(d);
+  }catch(e){ det.querySelector('.adbody').innerHTML = '<span class="text-danger">Failed to load detail</span>'; }
+}
+
+function renderAlertDetail(d){
+  if(!d.items || !d.items.length) return '<span class="text-muted">No detailed data captured for this alert.</span>';
+  const wrap = (title, color, table) =>
+    `<div style="font-size:10px;color:${color};margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;font-weight:600">${title}</div>
+     <div style="max-height:380px;overflow:auto;border:1px solid var(--border);border-radius:6px">${table}</div>`;
+  if(d.type === 'NEW_OTP'){
+    const rows = d.items.map(o=>`<tr>
+      <td style="white-space:nowrap;color:var(--text-muted)">${o.time?new Date(o.time).toLocaleString():'—'}</td>
+      <td>${escHtml(o.victim)}</td>
+      <td style="color:var(--warning)">${escHtml(o.sender)}</td>
+      <td style="white-space:normal;word-break:break-word">${escHtml(o.message)}</td></tr>`).join('');
+    return wrap(`Intercepted OTP / SMS · most recent ${d.items.length}`, 'var(--warning)',
+      `<table style="width:100%;font-family:var(--font-mono);font-size:11px"><thead><tr>
+        <th style="text-align:left">Time</th><th style="text-align:left">Victim</th><th style="text-align:left">Sender</th><th style="text-align:left">Message</th></tr></thead><tbody>${rows}</tbody></table>`);
+  }
+  if(d.type === 'NEW_VICTIM'){
+    const rows = d.items.map(v=>`<tr>
+      <td class="fw500">${escHtml(v.name)}</td>
+      <td style="font-family:var(--font-mono)">${escHtml(v.mobile)}</td>
+      <td style="color:var(--text-secondary)">${escHtml(v.device)}</td>
+      <td style="color:var(--danger);font-weight:600">${v.otps}</td>
+      <td style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted)">${escHtml(String(v.uid).slice(0,16))}…</td></tr>`).join('');
+    const link = d.records_url ? ` &nbsp;<a href="${d.records_url}" style="text-transform:none;letter-spacing:0">view full records →</a>` : '';
+    return wrap(`New victims · ${d.items.length}${link}`, 'var(--danger)',
+      `<table style="width:100%;font-size:11px"><thead><tr>
+        <th style="text-align:left">Name</th><th style="text-align:left">Mobile</th><th style="text-align:left">Device</th><th style="text-align:left">OTPs</th><th style="text-align:left">UID</th></tr></thead><tbody>${rows}</tbody></table>`);
+  }
+  return `<table style="font-family:var(--font-mono);font-size:11px">${d.items.map(it=>
+    `<tr><td style="color:var(--text-muted);padding-right:16px">${escHtml(it.key)}</td><td>${escHtml(it.value)}</td></tr>`).join('')}</table>`;
+}
+
+async function markSeen(id) {
+  await fetch('/api/monitor/seen/' + id, {method: 'POST'});
+  const row = document.getElementById('alert-' + id);
+  if (row) row.style.background = '';
+  const btn = row && row.querySelector('button');
+  if (btn) btn.remove();
+}
+</script>
+{% endblock %}

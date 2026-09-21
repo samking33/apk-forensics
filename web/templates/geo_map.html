@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Geo Map — {{ apk.filename }}{% endblock %}
+{% block breadcrumb %}
+<a href="/">Dashboard</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<a href="/case/{{ apk.id }}">{{ apk.filename }}</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<span class="current">Geo Map</span>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div class="page-heading">
+    <div class="page-title">
+      <i class="fa-solid fa-map-location-dot" style="color:var(--success);margin-right:8px"></i>
+      Geo-Intelligence Map
+    </div>
+    <div class="page-sub">
+      Victim distribution across India &nbsp;&middot;&nbsp;
+      <a href="/case/{{ apk.id }}">{{ apk.filename }}</a>
+    </div>
+  </div>
+  <div class="page-actions">
+    <button onclick="genMap(this)" class="btn btn-primary">
+      <i class="fa-solid fa-map-location-dot"></i> {% if has_map %}Regenerate{% else %}Generate{% endif %} Map
+    </button>
+    {% if has_map %}
+    <a href="/geomap/{{ apk.id }}/view" target="_blank" class="btn">
+      <i class="fa-solid fa-expand"></i> Full Screen
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+{% if not has_map %}
+<div class="card">
+  <div class="card-body" style="text-align:center;padding:80px 20px">
+    <div style="font-size:36px;color:var(--border-strong);margin-bottom:14px">
+      <i class="fa-solid fa-map-location-dot"></i>
+    </div>
+    <div style="font-size:15px;font-weight:500;color:var(--text-secondary);margin-bottom:6px">Map not generated yet</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px">
+      Run dynamic analysis to extract victim location data
+    </div>
+    <a href="/case/{{ apk.id }}" class="btn btn-primary">
+      <i class="fa-solid fa-arrow-left"></i> Back to Case
+    </a>
+  </div>
+</div>
+
+{% else %}
+
+{% set states = geo_data.get('states', []) %}
+{% set known  = states|selectattr('state','ne','Unknown')|list %}
+
+<div class="stats-grid" style="grid-template-columns:repeat(2,1fr);max-width:360px;margin-bottom:20px">
+  <div class="stat-card">
+    <div class="label">States Hit</div>
+    <div class="value red">{{ known|length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Top State</div>
+    <div class="value" style="font-size:18px;color:var(--warning)">{{ known[0].state if known else '—' }}</div>
+  </div>
+</div>
+
+<div class="detail-grid">
+
+  <div class="card">
+    <div class="card-header">
+      <div class="hdr-left">
+        <i class="fa-solid fa-ranking-star"></i>
+        State Breakdown
+      </div>
+    </div>
+    <table>
+      <thead>
+        <tr><th>State</th><th>Victims</th><th style="min-width:130px">Share</th></tr>
+      </thead>
+      <tbody>
+      {% set total = known|sum(attribute='count') %}
+      {% for row in known[:20] %}
+      <tr>
+        <td class="fw500">{{ row.state }}</td>
+        <td class="fw600 text-danger">{{ row.count }}</td>
+        <td>
+          {% set pct = (row.count / total * 100) if total else 0 %}
+          <div class="risk-bar">
+            <div class="risk-track">
+              <div class="risk-fill" style="width:{{ pct }}%;background:var(--danger)"></div>
+            </div>
+            <span style="color:var(--text-muted);font-size:11px;font-family:var(--font-mono)">{{ "%.1f"|format(pct) }}%</span>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="overflow:hidden">
+    <div class="card-header">
+      <div class="hdr-left">
+        <i class="fa-solid fa-map"></i>
+        India Victim Map
+      </div>
+    </div>
+    <iframe src="/geomap/{{ apk.id }}/view"
+            style="width:100%;height:500px;border:none;display:block"
+            title="Victim Distribution Map">
+    </iframe>
+  </div>
+
+</div>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+async function genMap(btn){
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="width:11px;height:11px"></span> Generating…';
+  try{
+    const r = await (await fetch('/api/geomap/run/{{ apk.id }}', {method:'POST'})).json();
+    if(r.detail) throw new Error(r.detail);
+    location.reload();
+  }catch(e){ alert('Map generation failed: '+e.message); btn.disabled=false; btn.innerHTML=orig; }
+}
+</script>
+{% endblock %}

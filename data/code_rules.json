@@ -1,0 +1,17 @@
+[
+  {"id": "crypto_ecb",        "severity": "HIGH",   "title": "Insecure cipher mode (ECB)",              "category": "CRYPTO",  "regex": "Cipher\\.getInstance\\(\\s*\"[^\"]*ECB"},
+  {"id": "crypto_des",        "severity": "HIGH",   "title": "Weak cipher (DES/3DES/RC4/Blowfish)",     "category": "CRYPTO",  "regex": "Cipher\\.getInstance\\(\\s*\"(DES|DESede|RC4|ARCFOUR|Blowfish)"},
+  {"id": "crypto_static_iv",  "severity": "HIGH",   "title": "Hardcoded IV",                            "category": "CRYPTO",  "regex": "new\\s+IvParameterSpec\\(\\s*(new\\s+byte\\[\\]|\"[^\"]+\"|[A-Za-z_]+\\.getBytes)"},
+  {"id": "crypto_secretkey",  "severity": "HIGH",   "title": "Hardcoded symmetric key",                 "category": "CRYPTO",  "regex": "new\\s+SecretKeySpec\\(\\s*(\"|new\\s+byte)"},
+  {"id": "hash_md5_sha1",     "severity": "MEDIUM", "title": "Weak hash (MD5/SHA-1)",                   "category": "CRYPTO",  "regex": "MessageDigest\\.getInstance\\(\\s*\"(MD5|SHA-?1)\""},
+  {"id": "insecure_random",   "severity": "LOW",    "title": "java.util.Random used (not crypto-safe)", "category": "CRYPTO",  "regex": "new\\s+java\\.util\\.Random\\(|=\\s*new\\s+Random\\("},
+  {"id": "webview_jsbridge",  "severity": "HIGH",   "title": "WebView JavaScript bridge",               "category": "WEBVIEW", "regex": "addJavascriptInterface\\("},
+  {"id": "webview_js_on",     "severity": "LOW",    "title": "WebView JavaScript enabled",              "category": "WEBVIEW", "regex": "setJavaScriptEnabled\\(\\s*true"},
+  {"id": "webview_fileaccess","severity": "MEDIUM", "title": "WebView file access enabled",             "category": "WEBVIEW", "regex": "setAllowFileAccess(FromFileURLs|FromFileURLs)?\\(\\s*true|setAllowUniversalAccessFromFileURLs\\(\\s*true"},
+  {"id": "tls_trustall",      "severity": "CRITICAL","title": "TLS certificate validation disabled",    "category": "NETWORK", "regex": "TrustAllX509TrustManager|checkServerTrusted\\([^)]*\\)\\s*\\{\\s*\\}|X509TrustManager\\(\\)\\s*\\{"},
+  {"id": "tls_allhosts",      "severity": "CRITICAL","title": "Hostname verification disabled",          "category": "NETWORK", "regex": "ALLOW_ALL_HOSTNAME_VERIFIER|setHostnameVerifier\\(|verify\\([^)]*\\)\\s*\\{\\s*return\\s+true"},
+  {"id": "runtime_exec",      "severity": "MEDIUM", "title": "Runtime command execution",               "category": "SYSTEM",  "regex": "Runtime\\.getRuntime\\(\\)\\.exec\\(|new\\s+ProcessBuilder\\("},
+  {"id": "sql_raw",           "severity": "LOW",    "title": "Raw SQL query",                           "category": "STORAGE", "regex": "\\.rawQuery\\(|\\.execSQL\\("},
+  {"id": "world_readable",    "severity": "MEDIUM", "title": "World-readable/writable file mode",       "category": "STORAGE", "regex": "MODE_WORLD_READABLE|MODE_WORLD_WRITEABLE"},
+  {"id": "external_storage",  "severity": "LOW",    "title": "Sensitive data on external storage",      "category": "STORAGE", "regex": "getExternalStorageDirectory\\(|getExternalFilesDir\\("}
+]

@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}Static Analysis — TGCSB APK Analyser{% endblock %}
+{% block breadcrumb %}
+<a href="/">TGCSB</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<span class="current">Static Analysis</span>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div class="page-heading">
+    <div class="page-title">Static Analysis</div>
+    <div class="page-sub">Manifest, permissions, code, certificates, IoCs &middot; Evidence auto-generated</div>
+  </div>
+</div>
+
+<div class="two-col" style="max-width:960px">
+
+  <!-- Upload form -->
+  <div class="card">
+    <div class="card-header">
+      <div class="hdr-left">
+        <i class="fa-solid fa-file-code"></i>
+        APK File for Static Analysis
+      </div>
+    </div>
+    <div class="card-body">
+
+      <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="upload-icon"><i class="fa-solid fa-mobile-screen"></i></div>
+        <h3>Drop APK here</h3>
+        <p>or click to browse &middot; .apk files only</p>
+        <div class="file-name" id="file-name" style="display:none"></div>
+      </div>
+      <input type="file" id="file-input" accept=".apk" onchange="onFileSelect(this)">
+
+      <form id="upload-form" style="margin-top:20px">
+        <div class="form-group">
+          <label class="form-label">
+            Case ID
+            <span class="optional">(optional)</span>
+          </label>
+          <input class="form-input" id="case-id" placeholder="e.g. TGCSB-2026-001">
+          <div class="form-hint">Associates this sample with an existing case file</div>
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:10px" id="submit-btn">
+          <i class="fa-solid fa-play"></i>
+          Start Static Analysis
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Live log -->
+  <div class="card">
+    <div class="card-header">
+      <div class="hdr-left">
+        <i class="fa-solid fa-terminal"></i>
+        Static Analysis Log
+      </div>
+      <span id="status-badge" class="badge badge-dim">Waiting</span>
+    </div>
+    <div class="card-body" style="padding:12px">
+      <div id="log-box">
+        <div class="log-line" style="color:var(--text-muted)">Waiting for upload…</div>
+      </div>
+    </div>
+    <div id="result-section" style="display:none;padding:14px 18px;border-top:1px solid var(--border)"></div>
+  </div>
+
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+let selectedFile = null;
+let jobId        = null;
+let pollInterval = null;
+let uploadInFlight = false;
+const ACTIVE_JOB_KEY = 'tgcsb_active_analysis_job';
+
+const dropZone  = document.getElementById('drop-zone');
+const logBox    = document.getElementById('log-box');
+const statusBdg = document.getElementById('status-badge');
+
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.name.endsWith('.apk')) setFile(f);
+});
+
+function onFileSelect(input) {
+  if (input.files[0]) setFile(input.files[0]);
+}
+
+function setFile(f) {
+  selectedFile = f;
+  const fn = document.getElementById('file-name');
+  fn.style.display = 'block';
+  fn.textContent   = `${f.name}  (${(f.size / 1048576).toFixed(1)} MB)`;
+}
+
+document.getElementById('upload-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!selectedFile) { appendLog('Select an APK file first.', 'warn'); return; }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled  = true;
+  btn.innerHTML = '<span class="spinner"></span> Uploading…';
+
+  const fd = new FormData();
+  fd.append('file',             selectedFile);
+  fd.append('case_id',          document.getElementById('case-id').value);
+  fd.append('firebase_project', '');
+  fd.append('firebase_key',     '');
+  fd.append('static_only',      '1');
+
+  logBox.innerHTML = '';
+  setStatus('Uploading', 'warning');
+  uploadInFlight = true;
+
+  try {
+    const r    = await fetch('/api/upload', { method: 'POST', body: fd });
+    const data = await r.json();
+    uploadInFlight = false;
+    if (!r.ok) {
+      appendLog('Error: ' + (data.detail || r.statusText), 'crit');
+      setStatus('Error', 'danger');
+      resetBtn(btn);
+      return;
+    }
+    jobId = data.job_id;
+    localStorage.setItem(ACTIVE_JOB_KEY, jobId);
+    appendLog(`APK uploaded · Job: ${jobId}`, 'info');
+    btn.innerHTML = '<span class="spinner"></span> Analysing static…';
+    setStatus('Running', 'info');
+    startPolling();
+  } catch (err) {
+    uploadInFlight = false;
+    appendLog('Upload failed: ' + err, 'crit');
+    setStatus('Error', 'danger');
+    resetBtn(btn);
+  }
+});
+
+function startPolling() {
+  if (pollInterval) clearInterval(pollInterval);
+  pollStatus();
+  pollInterval = setInterval(pollStatus, 1500);
+}
+
+async function pollStatus() {
+  try {
+    const r = await fetch(`/api/job/${jobId}`);
+    if (r.status === 404) {
+      localStorage.removeItem(ACTIVE_JOB_KEY);
+      clearInterval(pollInterval);
+      return;
+    }
+    const d = await r.json();
+
+    if (d.log && d.log.length) {
+      logBox.innerHTML = '';
+      d.log.forEach(line => {
+        const cls = (line.startsWith('[CRIT') || line.includes('ERROR')) ? 'crit'
+                  : (line.startsWith('[INFO') || line.includes('✓'))    ? 'info'
+                  : line.startsWith('[WARN')                             ? 'warn' : '';
+        logBox.innerHTML += `<div class="log-line ${cls}">${escHtml(line)}</div>`;
+      });
+      logBox.scrollTop = logBox.scrollHeight;
+    }
+
+    if (d.status === 'done') {
+      clearInterval(pollInterval);
+      localStorage.removeItem(ACTIVE_JOB_KEY);
+      setStatus('Complete', 'success');
+      appendLog('✓ Analysis complete', 'info');
+      const btn = document.getElementById('submit-btn');
+      resetBtn(btn);
+      const rs = document.getElementById('result-section');
+      rs.style.display = 'block';
+      rs.innerHTML = `
+        <div class="alert alert-success" style="margin-bottom:12px">
+          <i class="fa-solid fa-circle-check"></i>
+          Analysis complete
+          <span style="opacity:.7;margin-left:6px;font-family:var(--font-mono);font-size:11px">${d.apk_id ? d.apk_id.slice(0,16)+'…' : ''}</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <a href="/case/${d.apk_id}" class="btn btn-primary"><i class="fa-solid fa-eye"></i> View Case</a>
+          <a href="/case/${d.apk_id}/report" class="btn"><i class="fa-solid fa-download"></i> Reports</a>
+        </div>`;
+    } else if (d.status === 'error') {
+      clearInterval(pollInterval);
+      localStorage.removeItem(ACTIVE_JOB_KEY);
+      setStatus('Error', 'danger');
+      appendLog('Analysis failed: ' + (d.error || ''), 'crit');
+      resetBtn(document.getElementById('submit-btn'));
+    } else if (d.status === 'queued' || d.status === 'running') {
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Analysing static…';
+      setStatus(d.status === 'queued' ? 'Queued' : 'Running', 'info');
+    }
+  } catch (e) { /* transient — keep polling */ }
+}
+
+function appendLog(msg, cls='') {
+  logBox.innerHTML += `<div class="log-line ${cls}">${escHtml(msg)}</div>`;
+  logBox.scrollTop  = logBox.scrollHeight;
+}
+
+function setStatus(label, variant) {
+  statusBdg.className   = `badge badge-${variant}`;
+  statusBdg.textContent = label;
+}
+
+function resetBtn(btn) {
+  btn.disabled  = false;
+  btn.innerHTML = '<i class="fa-solid fa-play"></i> Start Static Analysis';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+window.addEventListener('beforeunload', e => {
+  if (!uploadInFlight) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+
+document.querySelectorAll('a[href]').forEach(a => {
+  a.addEventListener('click', e => {
+    if (!uploadInFlight) return;
+    if (!confirm('The APK is still uploading. Leaving now can cancel this upload before analysis starts.')) {
+      e.preventDefault();
+    }
+  });
+});
+
+(function resumeActiveJob() {
+  const saved = localStorage.getItem(ACTIVE_JOB_KEY);
+  if (!saved) return;
+  jobId = saved;
+  logBox.innerHTML = '';
+  appendLog(`Reconnected to analysis job: ${jobId}`, 'info');
+  setStatus('Reconnecting', 'info');
+  startPolling();
+})();
+</script>
+{% endblock %}

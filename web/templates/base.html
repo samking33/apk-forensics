@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}APK Forensic{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-logo">
+        <div class="brand-name">fSOC</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section">Investigation</div>
+
+      <a class="nav-item {% if active=='dashboard' %}active{% endif %}" href="/">
+        <i class="fa-solid fa-table-cells-large"></i>
+        Dashboard
+      </a>
+      <a class="nav-item {% if active=='static' or active=='upload' %}active{% endif %}" href="/static-analysis">
+        <i class="fa-solid fa-arrow-up-from-bracket"></i>
+        Static Analysis
+        <span class="nav-badge" id="analysis-nav-badge" style="display:none">RUN</span>
+      </a>
+      <a class="nav-item {% if active=='dynamic' %}active{% endif %}" href="/dynamic-analysis">
+        <i class="fa-solid fa-flask-vial"></i>
+        Dynamic Analysis
+      </a>
+      <a class="nav-item {% if active=='victims' %}active{% endif %}" href="/victims">
+        <i class="fa-solid fa-shield-heart"></i>
+        Victim Rescue
+      </a>
+      <a class="nav-item {% if active=='correlate' %}active{% endif %}" href="/correlate">
+        <i class="fa-solid fa-diagram-project"></i>
+        Correlate
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sess-info">
+        <div class="sess-label">Session</div>
+        <div class="sess-val" id="sess-id">——</div>
+        <div class="sess-val" id="sys-clock" style="margin-top:2px">——:——:—— IST</div>
+      </div>
+      <div class="status-dot" id="system-status">System Online</div>
+    </div>
+  </aside>
+
+  <!-- ── Main wrapper ── -->
+  <div class="main-wrapper">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-breadcrumb">
+        {% block breadcrumb %}
+        <a href="/">APK Forensic</a>
+        <span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+        <span class="current">{% block breadcrumb_current %}Dashboard{% endblock %}</span>
+        {% endblock %}
+      </div>
+      <div class="topbar-right">
+        <span class="topbar-meta" id="sys-clock-top" style="font-family:var(--font-mono);font-size:11px;color:var(--text-muted)"></span>
+      </div>
+    </header>
+
+    <!-- Page content -->
+    <main class="page-content">
+      {% block content %}{% endblock %}
+    </main>
+
+  </div><!-- .main-wrapper -->
+</div><!-- .app-shell -->
+
+<script>
+(function(){
+  let s = sessionStorage.getItem('tgcsb_sess');
+  if (!s) { s = Math.random().toString(36).slice(2,8).toUpperCase(); sessionStorage.setItem('tgcsb_sess',s); }
+  const el = document.getElementById('sess-id');
+  if (el) el.textContent = s;
+})();
+
+(function tick(){
+  const now = new Date();
+  const ist = new Date(now.getTime() + 5.5 * 3600000);
+  const p   = n => String(n).padStart(2,'0');
+  const t   = `${p(ist.getUTCHours())}:${p(ist.getUTCMinutes())}:${p(ist.getUTCSeconds())}`;
+  const el  = document.getElementById('sys-clock');
+  const el2 = document.getElementById('sys-clock-top');
+  if (el)  el.textContent  = t + ' IST';
+  if (el2) el2.textContent = t + ' IST';
+  setTimeout(tick, 1000);
+})();
+
+function riskBadge(r) {
+  const map = { CRITICAL: 'danger', HIGH: 'warning', MEDIUM: 'info', LOW: 'success' };
+  return `<span class="badge badge-${map[r]||'dim'}">${r||'UNK'}</span>`;
+}
+
+function riskBar(score) {
+  const lvl   = score >= 70 ? 'danger' : score >= 40 ? 'warning' : 'success';
+  const filled = Math.floor(score / 20);
+  const bars = [1,2,3,4,5].map(i =>
+    `<div class="thr-block thr-blk-${i}${i <= filled ? ' thr-'+lvl : ''}"></div>`
+  ).join('');
+  return `<div class="threat-ind">${bars}<span class="thr-num text-${lvl}">${score}</span></div>`;
+}
+
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const s = Math.floor((Date.now() - new Date(iso + (iso.endsWith('Z') ? '' : '+00:00'))) / 1000);
+  if (s < 60)    return `${s}s`;
+  if (s < 3600)  return `${Math.floor(s/60)}m`;
+  if (s < 86400) return `${Math.floor(s/3600)}h`;
+  return `${Math.floor(s/86400)}d`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+(function watchActiveAnalysis(){
+  const key = 'tgcsb_active_analysis_job';
+  const badge = document.getElementById('analysis-nav-badge');
+  const status = document.getElementById('system-status');
+
+  async function tick() {
+    const jobId = localStorage.getItem(key);
+    if (!jobId) {
+      if (badge) badge.style.display = 'none';
+      if (status) status.textContent = 'System Online';
+      return;
+    }
+
+    try {
+      const r = await fetch(`/api/job/${jobId}`);
+      if (r.status === 404) {
+        localStorage.removeItem(key);
+        if (badge) badge.style.display = 'none';
+        if (status) status.textContent = 'System Online';
+        return;
+      }
+
+      const d = await r.json();
+      if (badge) {
+        badge.style.display = 'inline-flex';
+        badge.textContent = d.status === 'done' ? 'DONE'
+                         : d.status === 'error' ? 'ERR'
+                         : d.status === 'queued' ? 'WAIT'
+                         : 'RUN';
+        badge.dataset.state = d.status === 'done' ? 'done'
+                          : d.status === 'error' ? 'error'
+                          : 'running';
+      }
+      if (status) {
+        status.textContent = d.status === 'done' ? 'Analysis Complete'
+                           : d.status === 'error' ? 'Analysis Error'
+                           : 'Analysis Running';
+      }
+    } catch (e) {
+      if (badge) {
+        badge.style.display = 'inline-flex';
+        badge.textContent = 'RUN';
+      }
+      if (status) status.textContent = 'Analysis Running';
+    }
+  }
+
+  tick();
+  setInterval(tick, 3000);
+})();
+</script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

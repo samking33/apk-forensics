@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Full Records — {{ apk.filename }}{% endblock %}
+{% block breadcrumb %}
+<a href="/">Dashboard</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<a href="/case/{{ apk.id }}">{{ apk.filename }}</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<span class="current">Full Records</span>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-heading">
+    <div class="page-title">Full Victim Records</div>
+    <div class="page-sub">
+      Complete, <strong>unmasked</strong> evidence &mdash; exactly as pulled from Firebase C2
+      <span class="mono">{{ project }}</span> &nbsp;&middot;&nbsp; {{ total }} victim{{ 's' if total != 1 else '' }}
+    </div>
+  </div>
+  <div class="page-actions">
+    <a href="/case/{{ apk.id }}" class="btn"><i class="fa-solid fa-arrow-left"></i> Case</a>
+  </div>
+</div>
+
+<div class="alert alert-warning" style="margin-bottom:14px">
+  <i class="fa-solid fa-scale-balanced"></i>
+  Court evidence view — every field returned by the C2 is shown verbatim with no masking or
+  interpretation. Columns and sections adapt to each sample's data schema automatically.
+</div>
+
+{% if total %}
+<div class="search-bar" style="margin-bottom:12px;max-width:420px">
+  <input type="text" id="rsearch" placeholder="Search name, mobile, device, UID…" oninput="filterRows()">
+  <button class="search-btn"><i class="fa-solid fa-magnifying-glass"></i></button>
+</div>
+
+<div class="card">
+  <table id="rtable">
+    <thead>
+      <tr><th style="width:30px"></th><th>#</th><th>Name</th><th>Mobile</th><th>Device</th>
+          <th>Intercepted SMS</th><th>SIMs</th><th>State</th><th>UID</th></tr>
+    </thead>
+    <tbody>
+    {% for v in index %}
+      <tr class="rrow" data-search="{{ (v.name ~ ' ' ~ v.mobile ~ ' ' ~ v.device ~ ' ' ~ v.uid)|lower }}"
+          onclick="toggle('{{ v.uid }}', this)">
+        <td><i class="fa-solid fa-chevron-right chev" id="chev-{{ v.uid }}" style="transition:transform .15s"></i></td>
+        <td style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px">{{ loop.index }}</td>
+        <td class="fw500">{{ v.name }}</td>
+        <td style="font-family:var(--font-mono);font-size:12px">{{ v.mobile }}</td>
+        <td style="color:var(--text-secondary);font-size:12px">{{ v.device }}</td>
+        <td><span class="fw600" style="color:{{ 'var(--danger)' if v.otps else 'var(--text-muted)' }}">{{ v.otps }}</span></td>
+        <td style="color:var(--text-secondary)">{{ v.sims }}</td>
+        <td>{% if v.online %}<span class="badge badge-success">online</span>{% else %}<span class="badge badge-dim">offline</span>{% endif %}</td>
+        <td style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted)">{{ v.uid[:16] }}…</td>
+      </tr>
+      <tr class="rdetail" id="detail-{{ v.uid }}" style="display:none">
+        <td colspan="9" style="padding:0">
+          <div id="body-{{ v.uid }}" style="padding:16px 20px;background:var(--bg)">
+            <span class="text-muted"><span class="spinner" style="width:12px;height:12px"></span> loading full record…</span>
+          </div>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card"><div class="card-body text-muted" style="text-align:center;padding:56px">
+  <i class="fa-solid fa-database" style="font-size:26px;opacity:.3;display:block;margin-bottom:10px"></i>
+  No extracted records for this sample yet. Run extraction from
+  <a href="/victims">Victim Rescue</a>.
+</div></div>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<style>
+.rec-sec{margin:14px 0}
+.rec-sec > .rec-h{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--accent);
+  border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:8px;font-weight:600}
+.rec-sub{font-size:11px;color:var(--warning);margin:10px 0 5px;font-weight:600}
+.rec-kv{width:auto;border-collapse:collapse}
+.rec-kv td{padding:4px 14px 4px 0;border:none;vertical-align:top;font-size:12px}
+.rec-kv .k{color:var(--text-muted);white-space:nowrap;font-size:11px}
+.rec-kv .v{color:var(--text);font-family:var(--font-mono);word-break:break-all}
+.rec-tbl{width:100%;border-collapse:collapse;margin-top:4px}
+.rec-tbl th{background:var(--bg-subtle);font-size:9px;padding:5px 8px;position:sticky;top:0}
+.rec-tbl td{font-size:11px;padding:4px 8px;font-family:var(--font-mono);border-bottom:1px solid var(--border-muted);
+  vertical-align:top;max-width:340px;word-break:break-word;white-space:pre-wrap}
+.rec-scroll{max-height:420px;overflow:auto;border:1px solid var(--border);border-radius:6px}
+.ts-hint{color:var(--text-muted);font-family:var(--font-ui);font-size:10px;margin-left:6px}
+</style>
+<script>
+const APK_ID = "{{ apk.id }}";
+const loaded = {};
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function fmtVal(k, val){
+  let out = esc(val);
+  // Faithful: show the raw value, add a human-readable hint for epoch-ms timestamps.
+  if(typeof val==='number' && val > 1e12 && val < 2e13 &&
+     /(_at|time|seen|updated|date|created)/i.test(k)){
+    out += `<span class="ts-hint">(${new Date(val).toISOString().replace('T',' ').slice(0,19)} UTC)</span>`;
+  }
+  return out;
+}
+
+function kvTable(obj){
+  const rows = Object.entries(obj).map(([k,v])=>
+    `<tr><td class="k">${esc(k)}</td><td class="v">${fmtVal(k,v)}</td></tr>`).join('');
+  return `<table class="rec-kv">${rows}</table>`;
+}
+
+function arrayTable(arr){
+  if(!arr.length) return '<span class="text-muted">empty</span>';
+  // union of keys across items = columns (schema-agnostic)
+  const cols=[]; arr.forEach(it=>{ if(it&&typeof it==='object') Object.keys(it).forEach(k=>{ if(!cols.includes(k)) cols.push(k); }); });
+  if(!cols.length){ // array of scalars
+    return `<div class="rec-scroll"><table class="rec-tbl"><tbody>${arr.map(x=>`<tr><td>${esc(x)}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+  const head = '<tr>'+cols.map(c=>`<th style="text-align:left;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">${esc(c)}</th>`).join('')+'</tr>';
+  const body = arr.map(it=>'<tr>'+cols.map(c=>{
+    const val = it && typeof it==='object' ? it[c] : (c===cols[0]?it:'');
+    if(val && typeof val==='object') return `<td>${esc(JSON.stringify(val))}</td>`;
+    return `<td>${val===undefined||val===null?'':fmtVal(c,val)}</td>`;
+  }).join('')+'</tr>').join('');
+  return `<div class="rec-scroll"><table class="rec-tbl"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+
+function sectionTitle(k){ return k.replace(/_/g,' '); }
+
+function renderRecord(v){
+  const scalars={}, collections={};
+  for(const [k,val] of Object.entries(v)){
+    if(val && typeof val==='object') collections[k]=val; else scalars[k]=val;
+  }
+  let html = `<div class="rec-sec"><div class="rec-h">Device / Identity</div>${kvTable(scalars)}</div>`;
+  for(const [k,val] of Object.entries(collections)){
+    let inner='';
+    if(Array.isArray(val)){
+      inner = arrayTable(val);
+    } else {
+      // nested object (e.g. credentials → page1/page2 …)
+      for(const [sk,sv] of Object.entries(val)){
+        inner += `<div class="rec-sub">${esc(sectionTitle(sk))}</div>`;
+        if(Array.isArray(sv)) inner += arrayTable(sv);
+        else if(sv && typeof sv==='object') inner += kvTable(sv);
+        else inner += `<table class="rec-kv"><tr><td class="k">${esc(sk)}</td><td class="v">${fmtVal(sk,sv)}</td></tr></table>`;
+      }
+    }
+    const count = Array.isArray(val) ? ` (${val.length})` : '';
+    html += `<div class="rec-sec"><div class="rec-h">${esc(sectionTitle(k))}${count}</div>${inner}</div>`;
+  }
+  return html;
+}
+
+async function toggle(uid, row){
+  const det = document.getElementById('detail-'+uid);
+  const chev = document.getElementById('chev-'+uid);
+  const open = det.style.display !== 'none';
+  det.style.display = open ? 'none' : '';
+  chev.style.transform = open ? '' : 'rotate(90deg)';
+  if(open || loaded[uid]) return;
+  loaded[uid] = true;
+  const body = document.getElementById('body-'+uid);
+  try{
+    const rec = await (await fetch(`/api/case/${APK_ID}/victim/${encodeURIComponent(uid)}`)).json();
+    body.innerHTML = renderRecord(rec);
+  }catch(e){ body.innerHTML = '<span class="text-danger">Failed to load record: '+esc(e.message)+'</span>'; loaded[uid]=false; }
+}
+
+function filterRows(){
+  const q = document.getElementById('rsearch').value.toLowerCase();
+  document.querySelectorAll('.rrow').forEach(tr=>{
+    const show = !q || tr.dataset.search.includes(q);
+    tr.style.display = show ? '' : 'none';
+    const det = document.getElementById('detail-'+tr.getAttribute('onclick').match(/'([^']+)'/)[1]);
+    if(det && !show) det.style.display='none';
+  });
+}
+</script>
+{% endblock %}

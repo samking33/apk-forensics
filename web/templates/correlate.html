@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Correlate — TGCSB APK Analyser{% endblock %}
+{% block breadcrumb %}
+<a href="/">Dashboard</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<span class="current">Correlate</span>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div class="page-heading">
+    <div class="page-title">Cross-APK Correlation</div>
+    <div class="page-sub">APKs linked by shared Firebase project, signing certificate, or attacker phone number</div>
+  </div>
+  <div class="page-actions">
+    <a href="/correlate" class="btn">
+      <i class="fa-solid fa-rotate"></i> Refresh
+    </a>
+  </div>
+</div>
+
+{% if not groups %}
+<div class="card">
+  <div class="card-body" style="text-align:center;padding:80px 20px">
+    <div style="font-size:36px;color:var(--border-strong);margin-bottom:14px">
+      <i class="fa-solid fa-diagram-project"></i>
+    </div>
+    <div style="font-size:15px;font-weight:500;color:var(--text-secondary);margin-bottom:6px">No correlations found</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:20px">
+      Upload at least 2 APKs to discover shared infrastructure
+    </div>
+    <a href="/upload" class="btn btn-primary">
+      <i class="fa-solid fa-arrow-up-from-bracket"></i> Ingest Sample
+    </a>
+  </div>
+</div>
+
+{% else %}
+
+<div class="stats-grid" style="grid-template-columns:repeat(2,1fr);max-width:360px;margin-bottom:24px">
+  <div class="stat-card">
+    <div class="label">Correlation Groups</div>
+    <div class="value yellow">{{ groups|length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">APKs Linked</div>
+    <div class="value red">{{ groups|sum(attribute='apk_count') }}</div>
+  </div>
+</div>
+
+{% for g in groups|sort(attribute='apk_count', reverse=True) %}
+<div class="corr-group">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+    <div style="flex:1;min-width:0">
+      <div class="corr-type">{{ g.correlation_type }}</div>
+      <div class="corr-value">{{ g.shared_value }}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin:6px 0">{{ g.description }}</div>
+      <div class="corr-files">
+        {% for fname in g.filenames %}
+        <span class="corr-file">{{ fname }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div style="text-align:right;white-space:nowrap;flex-shrink:0">
+      <div style="font-size:32px;font-weight:700;color:var(--danger);line-height:1">{{ g.apk_count }}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:2px">APKs linked</div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+{% endif %}
+
+{% endblock %}

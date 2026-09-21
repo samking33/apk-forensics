@@ -1,0 +1,462 @@
+{% extends "base.html" %}
+{% set page_title = page_title|default('fSOC Agent') %}
+{% set page_subtitle = page_subtitle|default('Claude Code · full tool access · autonomous') %}
+{% set dynamic_mode = dynamic_mode|default(false) %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block breadcrumb %}
+<a href="/">Dashboard</a>
+<span class="sep"><i class="fa-solid fa-chevron-right" style="font-size:9px"></i></span>
+<span class="current">{{ page_title }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="agent-wrap">
+  <div class="agent-head">
+    <div class="agent-title">
+      <div class="agent-avatar"><i class="fa-solid {% if dynamic_mode %}fa-flask-vial{% else %}fa-terminal{% endif %}"></i></div>
+      <div>
+        <div class="fw600">{{ page_title }}</div>
+        <div class="text-muted" style="font-size:11px">{{ page_subtitle }}</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      {% if dynamic_mode %}
+      <button class="btn btn-sm btn-primary" id="phone-toggle" onclick="togglePhone()"><i class="fa-solid fa-mobile-screen"></i> Sandbox</button>
+      {% else %}
+      <button class="btn btn-sm" onclick="goDynamic()" title="Continue this same session in the live sandbox"><i class="fa-solid fa-flask-vial"></i> Continue in Dynamic <i class="fa-solid fa-arrow-right" style="font-size:9px"></i></button>
+      {% endif %}
+      <button class="btn btn-sm" onclick="resetChat()"><i class="fa-solid fa-rotate-left"></i> New chat</button>
+    </div>
+  </div>
+
+  {% if dynamic_mode and prereqs and not prereqs.ready %}
+  <div class="alert alert-warning" style="margin-bottom:12px">
+    <i class="fa-solid fa-triangle-exclamation"></i>
+    Sandbox prerequisites are incomplete. The agent can still inspect the APK, but detonation may need setup first.
+  </div>
+  {% endif %}
+
+  <div class="agent-body">
+   <div class="agent-main">
+  <div id="chat" class="agent-chat">
+    <div class="agent-welcome">
+      <div class="agent-avatar big"><i class="fa-solid {% if dynamic_mode %}fa-flask-vial{% else %}fa-terminal{% endif %}"></i></div>
+      <h3>{{ page_title }}</h3>
+      {% if dynamic_mode %}
+      <p>Attach an APK and send it. The agent will boot the sandbox if needed, install the sample,
+         drive the emulator, capture runtime behaviour, and return evidence-backed findings.</p>
+      <div class="agent-suggest">
+        <button onclick="suggest('Run dynamic sandbox analysis on the attached APK and produce a behavioural verdict with evidence.')">Run sandbox analysis</button>
+        <button onclick="suggest('Detonate this APK, exercise login and permission flows with synthetic data, and capture network/OTP behaviour.')">Exercise behaviour</button>
+        <button onclick="suggest('Use the sandbox to prove whether this APK steals SMS, OTPs, contacts, or banking data.')">Prove data theft</button>
+      </div>
+      {% else %}
+      <p>Attach an APK for deep static analysis. Full shell access — jadx, apktool, frida —
+         and direct control of the fSOC static engine.</p>
+      <div class="agent-suggest">
+        <button onclick="suggest('Analyse the attached APK in depth and give me a full verdict with IOCs.')">Deep analysis + IOC report</button>
+        <button onclick="suggest('Decompile the APK and find all C2 endpoints and hardcoded secrets.')">C2 &amp; secrets recovery</button>
+        <button onclick="suggest('Is this sample a banking trojan? Prove it with evidence.')">Banking-trojan verdict</button>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="agent-input">
+    <div id="attachment"></div>
+    <div class="input-row">
+      <label class="attach-btn" title="Attach APK">
+        <i class="fa-solid fa-paperclip"></i>
+        <input type="file" id="file" accept=".apk" style="display:none">
+      </label>
+      <textarea id="msg" rows="1" placeholder="{% if dynamic_mode %}Attach an APK, or add dynamic-analysis instructions…{% else %}Ask the agent anything, or attach an APK…{% endif %}"
+                oninput="autoGrow(this)" onkeydown="onKey(event)"></textarea>
+      <button id="send" class="btn btn-primary" onclick="send()"><i class="fa-solid fa-arrow-up"></i></button>
+    </div>
+    <div class="text-muted" style="font-size:10px;margin-top:6px;text-align:center">
+      The agent runs real shell commands autonomously. Use on an authorised workstation.
+    </div>
+  </div>
+   </div><!-- .agent-main -->
+
+   <div id="phone" class="agent-phone" style="display:{% if dynamic_mode %}flex{% else %}none{% endif %}">
+     <div class="phone-bar">
+       <span id="phone-state" class="phone-dot off">offline</span>
+       <div style="display:flex;gap:6px">
+         <button class="btn btn-sm" onclick="bootSandbox()" id="boot-btn"><i class="fa-solid fa-play"></i></button>
+         <button class="btn btn-sm" onclick="stopSandbox()"><i class="fa-solid fa-stop"></i></button>
+       </div>
+     </div>
+     <div class="phone-frame">
+       <img id="screen" class="phone-screen" alt="">
+       <div id="screen-off" class="phone-offmsg"><i class="fa-solid fa-mobile-screen-button"></i><br>Sandbox offline<br><span style="font-size:11px">click ▶ to boot</span></div>
+     </div>
+     <div class="text-muted" style="font-size:10px;text-align:center;margin-top:8px">Live emulator mirror · updates ~1s</div>
+   </div>
+
+   {% if not dynamic_mode %}
+   <div id="results" class="agent-results">
+     <div class="res-head">Static Results <span class="res-live">live</span></div>
+     <div id="res-empty" class="res-empty">
+       <i class="fa-solid fa-flask" style="font-size:26px;opacity:.4"></i>
+       <div style="margin-top:8px">No analysis yet</div>
+       <div style="font-size:11px;margin-top:3px">Attach an APK and ask the agent to analyse it — structured results appear here as it works.</div>
+     </div>
+     <div id="res-card" style="display:none"></div>
+   </div>
+   {% endif %}
+  </div><!-- .agent-body -->
+</div>
+
+{% endblock %}
+{% block scripts %}
+<style>
+.agent-wrap{display:flex;flex-direction:column;height:calc(100vh - var(--topbar-height) - 40px)}
+.agent-body{display:flex;flex:1;min-height:0;gap:16px}
+.agent-main{flex:1;display:flex;flex-direction:column;min-height:0;min-width:0}
+.agent-phone{width:300px;flex-shrink:0;display:flex;flex-direction:column;padding-top:6px}
+.agent-results{width:330px;flex-shrink:0;display:flex;flex-direction:column;padding-top:6px;overflow-y:auto}
+.res-head{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.res-live{font-size:9px;color:var(--success);border:1px solid var(--success-border);border-radius:3px;padding:0 6px;text-transform:uppercase;letter-spacing:.5px}
+.res-empty{margin:auto;text-align:center;color:var(--text-secondary);max-width:240px;padding:20px}
+.res-gaugewrap{display:flex;gap:14px;align-items:center;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px}
+.res-gauge{width:74px;height:74px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.res-ginner{width:58px;height:58px;border-radius:50%;background:var(--bg-card);display:flex;flex-direction:column;align-items:center;justify-content:center}
+.res-score{font-size:20px;font-weight:700;font-family:var(--font-display)}
+.res-lvl{font-size:8px;text-transform:uppercase;letter-spacing:1px}
+.res-pkg{font-size:12px;font-weight:600;word-break:break-all}
+.res-dim{color:var(--text-muted);font-size:11px}
+.res-sec{font-size:9px;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);margin:14px 0 7px}
+.res-chip{display:inline-block;background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-border);border-radius:4px;padding:2px 8px;font-size:10px;margin:2px}
+.res-pill{display:inline-block;border:1px solid;border-radius:3px;padding:1px 8px;font-size:10px;font-weight:600;margin:2px}
+.res-list{display:flex;flex-direction:column;gap:4px}
+.res-row{display:flex;align-items:center;gap:7px;font-size:11px}
+.res-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.res-tag{font-size:9px;text-transform:uppercase;color:var(--warning);border:1px solid var(--warning-border);border-radius:3px;padding:0 5px;flex-shrink:0}
+.res-mono{font-family:var(--font-mono);font-size:10px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.res-mono2{font-size:11px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.phone-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.phone-dot{font-size:11px;display:inline-flex;align-items:center;gap:6px;color:var(--text-muted)}
+.phone-dot::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}
+.phone-dot.on{color:var(--success)}.phone-dot.off{color:var(--text-muted)}.phone-dot.boot{color:var(--warning)}
+.phone-frame{flex:1;background:#000;border:1px solid var(--border-strong);border-radius:6px;
+  overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;min-height:0}
+.phone-screen{width:100%;height:100%;object-fit:contain;display:none}
+.phone-offmsg{color:var(--text-muted);text-align:center;font-size:13px;line-height:1.8}
+.phone-offmsg i{font-size:34px;opacity:.4}
+.agent-head{display:flex;align-items:center;justify-content:space-between;padding-bottom:14px;
+  border-bottom:1px solid var(--border);margin-bottom:12px;flex-shrink:0}
+.agent-title{display:flex;align-items:center;gap:11px}
+.agent-avatar{width:34px;height:34px;border-radius:8px;background:var(--info-bg);border:1px solid var(--info-border);
+  display:flex;align-items:center;justify-content:center;color:var(--accent);flex-shrink:0}
+.agent-avatar.big{width:56px;height:56px;font-size:22px;border-radius:8px;margin-bottom:6px}
+.agent-chat{flex:1;overflow-y:auto;padding:6px 2px 20px;display:flex;flex-direction:column;gap:14px}
+.agent-welcome{margin:auto;text-align:center;max-width:520px;color:var(--text-secondary)}
+.agent-welcome h3{font-family:var(--font-display);color:var(--text);margin:8px 0 6px}
+.agent-welcome p{font-size:13px;line-height:1.6}
+.agent-suggest{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:16px}
+.agent-suggest button{background:var(--bg-card);border:1px solid var(--border);color:var(--text-secondary);
+  border-radius:4px;padding:6px 12px;font-size:11px;cursor:pointer;text-transform:uppercase;letter-spacing:.4px}
+.agent-suggest button:hover{border-color:var(--accent);color:var(--text)}
+.msg{display:flex;gap:10px;max-width:100%}
+.msg .who{width:26px;height:26px;border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px}
+.msg.user{flex-direction:row-reverse}
+.msg.user .who{background:var(--bg-hover);color:var(--text-secondary)}
+.msg.bot .who{background:var(--info-bg);border:1px solid var(--info-border);color:var(--accent)}
+.msg .body{min-width:0;flex:1}
+.msg.user .bubble{background:var(--info-bg);border:1px solid var(--info-border);display:inline-block;
+  padding:8px 13px;border-radius:5px;max-width:80%;float:right;white-space:pre-wrap;word-break:break-word}
+.bubble.md{background:var(--bg-card);border:1px solid var(--border);padding:12px 15px;border-radius:5px;font-size:13px;line-height:1.6}
+.think{font-size:12px;color:var(--text-muted);border-left:2px solid var(--border-strong);padding:4px 0 4px 10px;margin:2px 0;white-space:pre-wrap}
+.tool{margin:6px 0;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg-card)}
+.tool .toolhead{display:flex;align-items:center;gap:8px;padding:7px 12px;font-size:12px;cursor:pointer;user-select:none}
+.tool .toolhead .tname{font-family:var(--font-mono);color:var(--accent);font-weight:600}
+.tool .toolhead .targ{font-family:var(--font-mono);color:var(--text-muted);font-size:11px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;flex:1}
+.tool .toolhead .spin{width:11px;height:11px;border:2px solid var(--border);border-top-color:var(--accent);
+  border-radius:50%;animation:spin .6s linear infinite}
+.tool pre{margin:0;padding:10px 12px;background:var(--bg);border-top:1px solid var(--border);
+  font-family:var(--font-mono);font-size:11px;line-height:1.5;overflow-x:auto;max-height:340px;white-space:pre-wrap;word-break:break-word}
+.tool pre.hidden{display:none}
+.md pre{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;overflow-x:auto;
+  font-family:var(--font-mono);font-size:11px;margin:8px 0}
+.md code{background:var(--bg-subtle);border:1px solid var(--border);border-radius:3px;padding:1px 5px;
+  font-family:var(--font-mono);font-size:11px}
+.md pre code{background:none;border:none;padding:0}
+.md h1,.md h2,.md h3{font-family:var(--font-display);margin:10px 0 6px}
+.md ul,.md ol{margin:6px 0 6px 20px}.md li{margin:2px 0}
+.md a{color:var(--text-link)}.md table{margin:8px 0}.md th,.md td{padding:5px 9px;font-size:12px}
+.agent-input{flex-shrink:0;padding-top:12px;border-top:1px solid var(--border)}
+.input-row{display:flex;gap:8px;align-items:flex-end;background:var(--bg-card);border:1px solid var(--border);
+  border-radius:6px;padding:8px 10px}
+.input-row:focus-within{border-color:var(--accent)}
+.attach-btn{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:var(--text-muted);flex-shrink:0}
+.attach-btn:hover{background:var(--bg-hover);color:var(--text)}
+#msg{flex:1;background:none;border:none;outline:none;color:var(--text);font-family:var(--font-ui);
+  font-size:13px;resize:none;max-height:180px;line-height:1.5;padding:7px 2px}
+#send{width:34px;height:34px;padding:0;border-radius:8px;flex-shrink:0}
+#send:disabled{opacity:.4;cursor:not-allowed}
+.attach-chip{display:inline-flex;align-items:center;gap:8px;background:var(--info-bg);border:1px solid var(--info-border);
+  color:var(--accent);border-radius:8px;padding:5px 10px;font-size:12px;margin-bottom:8px;font-family:var(--font-mono)}
+.attach-chip button{background:none;border:none;color:var(--text-muted);cursor:pointer}
+</style>
+<script>
+const dynamicMode = {{ 'true' if dynamic_mode else 'false' }};
+
+// Handoff: continue the SAME session in the dynamic sandbox (shared sid → the
+// agent keeps all static context and just carries on).
+function goDynamic(){
+  localStorage.setItem('fsoc_handoff', '1');
+  location.href = '/dynamic-analysis';
+}
+
+// Persistent across navigation & tabs — the durable server-side session is keyed
+// by this, so switching tabs or reloading never loses the run.
+let sid = localStorage.getItem('fsoc_sid');
+if(!sid){ sid = (crypto.randomUUID ? crypto.randomUUID() : 'sid-'+Date.now()+'-'+Math.random().toString(36).slice(2)); localStorage.setItem('fsoc_sid', sid); }
+const chat = document.getElementById('chat');
+const msgEl = document.getElementById('msg');
+const sendBtn = document.getElementById('send');
+const WELCOME = chat.innerHTML;   // preserved for the empty-session state
+let attached = null;
+let R = null;                     // current assistant-turn render state
+
+document.getElementById('file').onchange = async function(){
+  const f = this.files[0]; if(!f) return;
+  const chip = renderAttachment({name:f.name, uploading:true});
+  const fd = new FormData(); fd.append('sid', sid); fd.append('file', f);
+  try{
+    const r = await (await fetch('/api/agent/upload',{method:'POST',body:fd})).json();
+    attached = {path:r.path, name:r.name};
+    renderAttachment(attached);
+  }catch(e){ renderAttachment(null); alert('Upload failed'); }
+  this.value='';
+};
+
+function renderAttachment(a){
+  const box = document.getElementById('attachment');
+  if(!a){ box.innerHTML=''; return; }
+  box.innerHTML = `<span class="attach-chip"><i class="fa-solid fa-file-zipper"></i> ${esc(a.name)}
+    ${a.uploading?'<span class="spinner" style="width:10px;height:10px"></span>':''}
+    ${!a.uploading?'<button onclick="clearAttach()"><i class="fa-solid fa-xmark"></i></button>':''}</span>`;
+}
+function clearAttach(){ attached=null; renderAttachment(null); }
+function suggest(t){ msgEl.value=t; autoGrow(msgEl); msgEl.focus(); }
+function autoGrow(el){ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,180)+'px'; }
+function onKey(e){ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send(); } }
+
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// minimal, safe-ish markdown for assistant text
+function md(t){
+  const parts = String(t).split('```');
+  let out='';
+  parts.forEach((seg,i)=>{
+    if(i%2===1){
+      const nl=seg.indexOf('\n');
+      const code = nl>=0 ? seg.slice(nl+1) : seg;
+      out += '<pre><code>'+esc(code)+'</code></pre>';
+    } else {
+      let s = esc(seg);
+      s = s.replace(/`([^`]+)`/g,'<code>$1</code>');
+      s = s.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+      s = s.replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/^## (.*)$/gm,'<h2>$1</h2>').replace(/^# (.*)$/gm,'<h2>$1</h2>');
+      s = s.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g,'<a href="$2" target="_blank">$1</a>');
+      s = s.replace(/^\s*[-*] (.*)$/gm,'<li>$1</li>');
+      s = s.replace(/(<li>[\s\S]*?<\/li>)/g, m=>'<ul>'+m+'</ul>');
+      s = s.replace(/\n/g,'<br>');
+      out += s;
+    }
+  });
+  return out;
+}
+
+function scroll(){ chat.scrollTop = chat.scrollHeight; }
+
+function addUser(text){
+  const w = document.querySelector('.agent-welcome'); if(w) w.remove();
+  const el = document.createElement('div'); el.className='msg user';
+  el.innerHTML = `<div class="who"><i class="fa-solid fa-user"></i></div>
+    <div class="body"><div class="bubble">${esc(text)}</div></div>`;
+  chat.appendChild(el); scroll();
+}
+function addBot(){
+  const el = document.createElement('div'); el.className='msg bot';
+  el.innerHTML = `<div class="who"><i class="fa-solid fa-terminal"></i></div><div class="body"></div>`;
+  chat.appendChild(el); scroll();
+  return el.querySelector('.body');
+}
+
+async function send(){
+  const text = msgEl.value.trim();
+  if(!text && !attached) return;
+  let payload = text;
+  if(attached){
+    if(typeof dynamicMode!=='undefined' && dynamicMode){
+      payload = `[The user attached an APK at: ${attached.path}]\n` +
+        (text || `Run a behavioural analysis of this flagged sample in the isolated sandbox and document what it does. Check sandbox status and boot if needed, install and launch the sample, grant the runtime permissions it requests, navigate its flows with synthetic decoy data only, and record the permissions, on-screen behaviour and events with screenshots. Use python3 -m core.sandbox.sandbox_ctl for emulator control. Give a concise behavioural verdict with concrete evidence.`);
+    } else {
+      payload = `[The user attached an APK at: ${attached.path}]\n` + (text || 'Analyse this APK in depth and give a full verdict.');
+    }
+  }
+  msgEl.value=''; autoGrow(msgEl);
+  attached=null; renderAttachment(null);
+  const fd = new FormData(); fd.append('sid', sid); fd.append('message', payload);
+  try{ await fetch('/api/agent/message',{method:'POST',body:fd}); }
+  catch(e){ renderEvent({type:'error', text:'could not reach server: '+e.message}); }
+  // The open stream renders the echoed user message + the response.
+}
+
+// ── Event-driven rendering (idempotent: replays the whole log on reconnect) ──
+function displayUser(t){ return String(t).replace(/^\[[^\]]*\]\n/, '').trim() || String(t); }
+
+function addWorking(){
+  const s=document.createElement('div'); s.className='think'; s.dataset.working='1';
+  R.secs=0;
+  const paint=()=>{ if(s.parentNode) s.innerHTML=`<span class="spinner" style="width:10px;height:10px"></span> working… (${R.secs}s)`; };
+  paint(); R.body.appendChild(s); R.status=s;
+  R.timer=setInterval(()=>{ R.secs++; paint(); },1000);
+}
+function clearWorking(){
+  if(R&&R.timer){ clearInterval(R.timer); R.timer=null; }
+  if(R&&R.status&&R.status.parentNode){ R.status.remove(); R.status=null; }
+}
+function ensureBot(){
+  if(!R || !R.body){
+    R={body:addBot(),curTool:null,textBlock:null,textRaw:'',think:null,thinkRaw:'',tools:{},timer:null,secs:0,status:null};
+    addWorking();
+  }
+  return R;
+}
+
+function renderEvent(ev){
+  if(ev.type==='heartbeat') return;
+  if(ev.type==='user'){ clearWorking(); R=null; addUser(displayUser(ev.text)); return; }
+  if(ev.type==='status'){ ensureBot(); if(R.status) R.status.innerHTML=`<span class="spinner" style="width:10px;height:10px"></span> ${esc(ev.text)}`; scroll(); return; }
+  ensureBot();
+  const body=R.body;
+  if(ev.type==='reasoning_delta'){ clearWorking(); if(!R.think){ R.think=document.createElement('div'); R.think.className='think'; R.thinkRaw=''; body.appendChild(R.think); R.textBlock=null; } R.thinkRaw+=ev.text; R.think.textContent=R.thinkRaw; }
+  else if(ev.type==='text_delta'){ clearWorking(); if(!R.textBlock){ R.textBlock=document.createElement('div'); R.textBlock.className='bubble md'; R.textRaw=''; body.appendChild(R.textBlock); R.think=null; } R.textRaw+=ev.text; R.textBlock.innerHTML=md(R.textRaw); }
+  else if(ev.type==='tool_call'){ clearWorking(); const a=ev.args||{}; const argStr=a.command||a.file_path||a.path||a.pattern||a.apk_path||a.prompt||JSON.stringify(a); const t=document.createElement('div'); t.className='tool'; t.innerHTML=`<div class="toolhead" onclick="this.nextElementSibling.classList.toggle('hidden')"><span class="tname"><i class="fa-solid fa-gear" style="font-size:9px;margin-right:4px"></i>${esc(ev.name||'tool')}</span><span class="targ">${esc(argStr)}</span><span class="spin"></span></div><pre class="hidden">running…</pre>`; body.appendChild(t); if(ev.id) R.tools[ev.id]=t; R.curTool=t; R.textBlock=null; R.think=null; }
+  else if(ev.type==='tool_result'){ const t=(ev.id&&R.tools[ev.id])||R.curTool; if(t){ t.querySelector('.spin')?.remove(); t.querySelector('pre').textContent=ev.result||'(no output)'; } R.curTool=null; }
+  else if(ev.type==='error'){ clearWorking(); const d=document.createElement('div'); d.className='bubble md'; d.style.borderColor='var(--danger-border)'; d.style.color='var(--danger)'; d.textContent='Error: '+ev.text; body.appendChild(d); }
+  else if(ev.type==='done'){ clearWorking(); R=null; }
+  scroll();
+}
+
+// ── Durable reconnecting stream ──
+let streamCtrl=null;
+async function openStream(fromIndex, clear){
+  if(clear){ chat.innerHTML=WELCOME; R=null; }
+  let cursor=fromIndex;
+  const ctrl=new AbortController(); streamCtrl=ctrl;
+  try{
+    const resp=await fetch(`/api/agent/stream?sid=${encodeURIComponent(sid)}&from_index=${fromIndex}`,{signal:ctrl.signal});
+    const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf='';
+    while(true){
+      const {value,done}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      let idx;
+      while((idx=buf.indexOf('\n\n'))>=0){
+        const chunk=buf.slice(0,idx); buf=buf.slice(idx+2);
+        if(!chunk.startsWith('data: ')) continue;
+        const ev=JSON.parse(chunk.slice(6));
+        if(ev.type==='heartbeat'){ cursor=ev.index; continue; }
+        cursor++; renderEvent(ev);
+      }
+    }
+  }catch(e){ /* navigated away / network blip */ }
+  if(streamCtrl===ctrl){ setTimeout(()=>openStream(cursor,false), 1200); }
+}
+openStream(0, true);
+
+// ── Static mode: live structured-results panel ──
+const SEVC = {CRITICAL:'#e05151',HIGH:'#e09b20',MEDIUM:'#4d8fe8',LOW:'#3db87a',INFO:'#8892a4'};
+function renderResults(d){
+  const empty=document.getElementById('res-empty'), card=document.getElementById('res-card');
+  if(!empty||!card) return;
+  if(!d.analyzed){ empty.style.display=''; card.style.display='none'; return; }
+  empty.style.display='none'; card.style.display='';
+  const col = SEVC[d.level]||'#3db87a';
+  const beh = (d.behaviors||[]).map(b=>`<span class="res-chip">${esc(b.replace(/_/g,' '))}</span>`).join('') || '<span class="res-dim">none detected</span>';
+  const sev = Object.keys(d.sev_counts||{}).sort((a,b)=>['CRITICAL','HIGH','MEDIUM','LOW','INFO'].indexOf(a)-['CRITICAL','HIGH','MEDIUM','LOW','INFO'].indexOf(b))
+    .map(k=>`<span class="res-pill" style="color:${SEVC[k]||'#888'};border-color:${(SEVC[k]||'#888')}55">${d.sev_counts[k]} ${k}</span>`).join('') || '<span class="res-dim">none</span>';
+  const c2 = (d.c2||[]).map(c=>`<div class="res-row"><span class="res-tag">${esc(c.type)}</span><span class="res-mono">${esc(c.value)}</span></div>`).join('') || '<div class="res-dim">none identified</div>';
+  const finds = (d.findings||[]).map(f=>`<div class="res-row"><span class="res-dot" style="background:${SEVC[f.severity]||'#888'}"></span><span class="res-mono2">${esc(f.title)}</span></div>`).join('') || '<div class="res-dim">none</div>';
+  card.innerHTML = `
+    <div class="res-gaugewrap">
+      <div class="res-gauge" style="background:conic-gradient(${col} ${(d.risk||0)*3.6}deg,#21252e 0)"><div class="res-ginner"><div class="res-score">${d.risk||0}</div><div class="res-lvl" style="color:${col}">${esc(d.level)}</div></div></div>
+      <div style="min-width:0"><div class="res-pkg">${esc(d.package||d.filename||'sample')}</div><div class="res-dim">${esc(d.cert_schemes||'')}</div></div>
+    </div>
+    <div class="res-sec">Behaviours</div><div>${beh}</div>
+    <div class="res-sec">Findings by severity</div><div>${sev}</div>
+    <div class="res-list" style="margin-top:8px">${finds}</div>
+    <div class="res-sec">C2 Channels</div><div class="res-list">${c2}</div>
+    <a class="btn btn-sm btn-primary" href="${d.case_url}" style="margin-top:14px;width:100%;justify-content:center"><i class="fa-solid fa-up-right-from-square"></i>&nbsp; Open full case</a>`;
+}
+async function updateResults(){
+  try{ renderResults(await (await fetch('/api/agent/analysis?sid='+encodeURIComponent(sid))).json()); }catch(e){}
+}
+if(!dynamicMode){ updateResults(); setInterval(updateResults, 3500); }
+
+// Dynamic mode: show the live mirror immediately, and if we arrived via the
+// static→dynamic handoff, tell the same session to continue in the sandbox.
+if(dynamicMode){
+  if(localStorage.getItem('fsoc_handoff')){
+    localStorage.removeItem('fsoc_handoff');
+    setTimeout(()=>{
+      const fd=new FormData(); fd.append('sid',sid);
+      fd.append('message','Static analysis is complete. Now continue with dynamic behavioural analysis of the same sample in the isolated sandbox: check sandbox status and boot if needed, install and launch the APK, grant the runtime permissions it requests, navigate its flows with synthetic decoy data only, and document the runtime behaviour with screenshots and events. Provide a behavioural verdict with concrete evidence.');
+      fetch('/api/agent/message',{method:'POST',body:fd});
+    }, 1000);
+  }
+}
+
+// ── Live sandbox mirror ──────────────────────────────────────────────
+let phoneOn=dynamicMode, screenTimer=null, statusTimer=null;
+function togglePhone(){
+  phoneOn=!phoneOn;
+  document.getElementById('phone').style.display = phoneOn?'flex':'none';
+  document.getElementById('phone-toggle').classList.toggle('btn-primary', phoneOn);
+  if(phoneOn){ refreshScreen(); refreshStatus();
+    screenTimer=setInterval(refreshScreen,1200); statusTimer=setInterval(refreshStatus,4000); }
+  else { clearInterval(screenTimer); clearInterval(statusTimer); }
+}
+function refreshScreen(){
+  const img=document.getElementById('screen'), off=document.getElementById('screen-off');
+  if(!img) return;
+  img.onload=()=>{ img.style.display='block'; if(off) off.style.display='none'; };
+  img.onerror=()=>{ img.style.display='none'; if(off) off.style.display='block'; };
+  img.src='/api/sandbox/screen?t='+Date.now();
+}
+async function refreshStatus(){
+  try{
+    const s=await (await fetch('/api/sandbox/status')).json();
+    const dot=document.getElementById('phone-state');
+    if(s.booted){ dot.className='phone-dot on'; dot.textContent=s.frida?'live · frida':'live'; }
+    else { dot.className='phone-dot off'; dot.textContent='offline'; }
+  }catch(e){}
+}
+async function bootSandbox(){
+  const dot=document.getElementById('phone-state'); dot.className='phone-dot boot'; dot.textContent='booting…';
+  try{ await fetch('/api/sandbox/boot',{method:'POST'}); }catch(e){}
+  // poll until booted
+  const poll=setInterval(async()=>{ await refreshStatus();
+    if(document.getElementById('phone-state').classList.contains('on')) clearInterval(poll); }, 4000);
+}
+async function stopSandbox(){ try{ await fetch('/api/sandbox/stop',{method:'POST'}); }catch(e){} refreshStatus(); }
+
+async function resetChat(){
+  try{ const fd=new FormData(); fd.append('sid',sid); await fetch('/api/agent/reset',{method:'POST',body:fd}); }catch(e){}
+  localStorage.removeItem('fsoc_sid');   // fresh session id on reload
+  location.reload();
+}
+
+if(dynamicMode){
+  refreshScreen(); refreshStatus();
+  screenTimer=setInterval(refreshScreen,1200);
+  statusTimer=setInterval(refreshStatus,4000);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — APK Forensic{% endblock %}
+{% block breadcrumb_current %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="p-home">
+
+<div class="p-toolbar">
+  <div class="p-toolbar-left">
+    <div class="p-title-wrap">
+      <div class="p-title">Investigation Dashboard</div>
+      <div class="p-sub">
+        {{ apks|length }} sample{{ 's' if apks|length != 1 else '' }} ingested &nbsp;&middot;&nbsp;
+        Firebase C2 cluster analysis
+      </div>
+    </div>
+  </div>
+  <div class="p-toolbar-right">
+    <button class="p-icon-btn" title="Refresh" onclick="location.reload()"><i class="fa-solid fa-rotate"></i></button>
+    <a href="/upload" class="p-btn p-btn-primary">
+      <i class="fa-solid fa-arrow-up-from-bracket"></i> Ingest Sample
+    </a>
+  </div>
+</div>
+
+<!-- Operational metrics -->
+<div class="p-stats">
+  {% for label, val, sub, color in [
+    ('Samples', stats.total, 'APK files analysed', 'blue'),
+    ('Victims', "{:,}".format(stats.victims), 'Compromised devices', 'maroon'),
+    ('OTPs Stolen', "{:,}".format(stats.otps), 'Banking intercepts', 'orange'),
+    ('Leads', stats.leads, 'Actionable intelligence', 'purple'),
+    ('High Risk', stats.high_risk, 'Risk score ≥ 70', 'maroon'),
+    ('Firebase C2s', stats.firebase_projects, 'Unique C2 projects', 'teal'),
+  ] %}
+  <div class="p-stat">
+    <div class="p-stat-top">
+      <span class="p-badge c-{{ color }}">{{ loop.index }}.0</span>
+      <span class="p-stat-type">Number</span>
+      <div class="p-stat-icons">
+        <i class="fa-solid fa-up-right-and-down-left-from-center"></i>
+        <i class="fa-solid fa-ellipsis"></i>
+      </div>
+    </div>
+    <div class="p-stat-value">{{ val }}</div>
+    <div class="p-stat-label">{{ label }}</div>
+    <div class="p-stat-sub">{{ sub }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Sample registry -->
+<div class="p-card">
+  <div class="p-card-head">
+    <i class="fa-solid fa-grip-vertical p-grip"></i>
+    <span class="p-badge c-blue">SR1</span>
+    <div class="p-card-titlewrap">
+      <span class="p-card-title">Sample Registry</span>
+      <span class="p-card-tag">Object table &middot; {{ apks|length }} record{{ 's' if apks|length != 1 else '' }}</span>
+    </div>
+    <div class="p-card-icons">
+      <i class="fa-solid fa-up-right-and-down-left-from-center" title="Expand"></i>
+      <i class="fa-solid fa-thumbtack" title="Pin"></i>
+      <i class="fa-solid fa-gear" title="Properties"></i>
+      <i class="fa-solid fa-ellipsis" title="More"></i>
+    </div>
+  </div>
+
+  <div class="p-card-toolbar">
+    <div class="p-search">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input type="text" id="search" placeholder="Search filename, package, Firebase project…" oninput="filterTable()">
+    </div>
+    <div class="p-filterbar">
+      <button class="p-filter active" onclick="setFilter('ALL',this)">All</button>
+      <button class="p-filter" onclick="setFilter('HIGH',this)">Risk &ge; 70</button>
+      <button class="p-filter" onclick="setFilter('STATIC',this)">Static only</button>
+      <button class="p-filter" onclick="setFilter('FULL',this)">Full analysis</button>
+    </div>
+  </div>
+
+  <div class="p-table-wrap">
+  <table id="apk-table" class="p-table">
+    <thead>
+      <tr>
+        <th style="width:36px">#</th>
+        <th>Sample</th>
+        <th>Package</th>
+        <th>Firebase C2</th>
+        <th style="min-width:130px">Risk</th>
+        <th>Victims</th>
+        <th>OTPs</th>
+        <th>Leads</th>
+        <th>Status</th>
+        <th style="width:100px"></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for a in apks %}
+    <tr class="apk-row"
+        data-name="{{ a.filename|lower }}"
+        data-pkg="{{ (a.package_name or '')|lower }}"
+        data-fb="{{ (a.firebase_project or '')|lower }}"
+        data-risk="{{ a.risk_score }}"
+        data-static="{{ 'true' if a.static_done else 'false' }}"
+        data-dynamic="{{ 'true' if a.dynamic_done else 'false' }}">
+      <td style="color:var(--text-muted);font-family:var(--font-mono);font-size:11px">{{ loop.index }}</td>
+      <td>
+        <a href="/case/{{ a.id }}" class="fw500" style="color:var(--text)">
+          {{ a.filename[:32] }}{% if a.filename|length > 32 %}…{% endif %}
+        </a>
+        <div class="hash">{{ a.id[:24] }}&hellip;</div>
+      </td>
+      <td style="color:var(--text-secondary);font-family:var(--font-mono);font-size:11px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        {{ a.package_name or '—' }}
+      </td>
+      <td>
+        {% if a.firebase_project %}
+          <span class="badge badge-danger">{{ a.firebase_project }}</span>
+        {% else %}
+          <span style="color:var(--text-muted)">—</span>
+        {% endif %}
+      </td>
+      <td>
+        {% set filled = a.risk_score // 20 %}
+        {% set lvl = 'danger' if a.risk_score >= 70 else 'warning' if a.risk_score >= 40 else 'success' %}
+        <div class="threat-ind">
+          {% for i in range(1, 6) %}
+          <div class="thr-block thr-blk-{{ i }}{% if i <= filled %} thr-{{ lvl }}{% endif %}"></div>
+          {% endfor %}
+          <span class="thr-num text-{{ lvl }}">{{ a.risk_score }}</span>
+        </div>
+      </td>
+      <td>
+        {% if a.victim_count %}
+          <span class="fw500 text-danger">{{ a.victim_count }}</span>
+        {% else %}
+          <span style="color:var(--text-muted)">—</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if a.otp_count %}
+          <span style="color:var(--warning);font-family:var(--font-mono);font-size:12px">{{ "{:,}".format(a.otp_count) }}</span>
+        {% else %}
+          <span style="color:var(--text-muted)">—</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if a.lead_count %}
+          <span style="color:var(--text-secondary)">{{ a.lead_count }}</span>
+        {% else %}
+          <span style="color:var(--text-muted)">—</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if a.static_done and a.dynamic_done %}
+          <span class="badge badge-success">Full</span>
+        {% elif a.static_done %}
+          <span class="badge badge-warning">Static</span>
+        {% else %}
+          <span class="badge badge-dim">Pending</span>
+        {% endif %}
+      </td>
+      <td style="white-space:nowrap">
+        <a href="/case/{{ a.id }}" class="p-btn p-btn-sm" style="margin-right:4px">View</a>
+        <a href="/case/{{ a.id }}/report" class="p-btn p-btn-sm">Reports</a>
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="10" style="text-align:center;color:var(--text-muted);padding:60px 20px">
+        <div style="margin-bottom:12px;font-size:28px;color:var(--border-strong)">
+          <i class="fa-solid fa-database"></i>
+        </div>
+        <div style="font-weight:500;color:var(--text-secondary);margin-bottom:6px">No samples ingested yet</div>
+        <div style="font-size:12px;margin-bottom:16px">Upload an APK to begin analysis</div>
+        <a href="/upload" class="p-btn p-btn-primary">
+          <i class="fa-solid fa-arrow-up-from-bracket"></i>
+          Ingest First Sample
+        </a>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+</div>
+{% endblock %}
+{% block scripts %}
+<style>
+/* ── Palantir/Quiver-style light theme, scoped to the dashboard content only.
+   The persistent sidebar/topbar remain the app's standard dark theme. ── */
+.p-home{
+  --bg:            #f5f6f8;
+  --bg-card:       #ffffff;
+  --bg-subtle:     #f8f9fb;
+  --bg-hover:      #eef0f3;
+  --bg-input:      #ffffff;
+
+  --border:        #e2e5ea;
+  --border-muted:  #edeef1;
+  --border-strong: #c8cdd6;
+
+  --text:           #14161a;
+  --text-secondary: #5b6270;
+  --text-muted:     #9298a3;
+  --text-link:      #2563eb;
+
+  --danger:        #dc2626;
+  --danger-dim:    #b91c1c;
+  --danger-bg:     #fef2f2;
+  --danger-border: #fecaca;
+
+  --warning:        #d97706;
+  --warning-dim:    #b45309;
+  --warning-bg:     #fffbeb;
+  --warning-border: #fde68a;
+
+  --success:        #16a34a;
+  --success-dim:    #15803d;
+  --success-bg:     #f0fdf4;
+  --success-border: #bbf7d0;
+
+  --info:        #2563eb;
+  --info-dim:    #1d4ed8;
+  --info-bg:     #eff6ff;
+  --info-border: #bfdbfe;
+
+  --accent:       #2563eb;
+  --accent-hover: #1d4ed8;
+
+  --font-display: 'Inter', -apple-system, sans-serif;
+
+  background: var(--bg);
+  margin: -20px -24px;
+  padding: 20px 24px;
+  min-height: calc(100vh - var(--topbar-height));
+  color: var(--text);
+}
+.p-home .thr-danger  { box-shadow: none; }
+.p-home .thr-warning { box-shadow: none; }
+
+.p-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.p-title{font-family:var(--font-display);font-size:20px;font-weight:700;color:var(--text);letter-spacing:-.2px}
+.p-sub{font-size:12px;color:var(--text-secondary);margin-top:3px}
+.p-toolbar-right{display:flex;align-items:center;gap:8px}
+
+.p-icon-btn{width:30px;height:30px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);
+  border-radius:5px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px}
+.p-icon-btn:hover{background:var(--bg-hover);color:var(--text)}
+
+.p-btn{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:5px;border:1px solid var(--border);
+  background:var(--bg-card);color:var(--text-secondary);font-size:12px;font-weight:500;cursor:pointer;text-decoration:none}
+.p-btn:hover{background:var(--bg-hover);color:var(--text)}
+.p-btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.p-btn-primary:hover{background:var(--accent-hover);border-color:var(--accent-hover);color:#fff}
+.p-btn-sm{padding:4px 10px;font-size:11px}
+
+.p-badge{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:19px;padding:0 6px;
+  border-radius:3px;font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.3px;border:1px solid;flex-shrink:0}
+.p-badge.c-blue{background:#eff6ff;color:#2563eb;border-color:#bfdbfe}
+.p-badge.c-maroon{background:#fef2f2;color:#b3261e;border-color:#f5c2be}
+.p-badge.c-orange{background:#fff7ed;color:#c2560c;border-color:#fed7aa}
+.p-badge.c-purple{background:#f5f3ff;color:#7c3aed;border-color:#ddd6fe}
+.p-badge.c-teal{background:#f0fdfa;color:#0d9488;border-color:#99f6e4}
+
+.p-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+.p-stat{background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:12px 14px}
+.p-stat-top{display:flex;align-items:center;gap:7px;margin-bottom:12px}
+.p-stat-type{font-size:10px;color:var(--text-muted)}
+.p-stat-icons{margin-left:auto;display:flex;gap:6px;color:var(--text-muted);font-size:10px}
+.p-stat-value{font-family:var(--font-display);font-size:26px;font-weight:700;color:var(--text);letter-spacing:-.5px}
+.p-stat-label{font-size:11px;font-weight:600;color:var(--text-secondary);margin-top:2px}
+.p-stat-sub{font-size:10px;color:var(--text-muted);margin-top:1px}
+
+.p-card{background:var(--bg-card);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.p-card-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--border)}
+.p-grip{color:var(--text-muted);font-size:11px;opacity:.5}
+.p-card-titlewrap{display:flex;flex-direction:column;gap:1px}
+.p-card-title{font-size:13px;font-weight:600;color:var(--text)}
+.p-card-tag{font-size:10px;color:var(--text-muted)}
+.p-card-icons{margin-left:auto;display:flex;gap:10px;color:var(--text-muted);font-size:12px}
+.p-card-icons i{cursor:pointer}
+.p-card-icons i:hover{color:var(--text)}
+
+.p-card-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;
+  border-bottom:1px solid var(--border);flex-wrap:wrap}
+.p-search{display:flex;align-items:center;gap:8px;background:var(--bg-input);border:1px solid var(--border);
+  border-radius:5px;padding:6px 10px;width:320px;max-width:100%;color:var(--text-muted);font-size:12px}
+.p-search input{border:none;background:none;outline:none;color:var(--text);font-size:12px;flex:1;font-family:var(--font-ui)}
+.p-filterbar{display:flex;gap:6px}
+.p-filter{background:var(--bg-card);border:1px solid var(--border);color:var(--text-secondary);border-radius:5px;
+  padding:5px 11px;font-size:11px;cursor:pointer}
+.p-filter:hover{background:var(--bg-hover)}
+.p-filter.active{background:var(--info-bg);border-color:var(--info-border);color:var(--info)}
+
+.p-table-wrap{overflow-x:auto}
+.p-table{width:100%;border-collapse:collapse}
+.p-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);
+  padding:8px 12px;border-bottom:1px solid var(--border);background:var(--bg-subtle)}
+.p-table td{padding:9px 12px;border-bottom:1px solid var(--border-muted);font-size:12px;color:var(--text-secondary)}
+.p-table tbody tr:hover{background:var(--bg-subtle)}
+</style>
+<script>
+let riskFilter = 'ALL';
+
+function filterTable() {
+  const q = document.getElementById('search').value.toLowerCase();
+  document.querySelectorAll('.apk-row').forEach(tr => {
+    const text    = tr.dataset.name + ' ' + tr.dataset.pkg + ' ' + tr.dataset.fb;
+    const score   = parseInt(tr.dataset.risk);
+    const match   = !q || text.includes(q);
+    let   filt    = true;
+    if (riskFilter === 'HIGH')   filt = score >= 70;
+    if (riskFilter === 'STATIC') filt = tr.dataset.static === 'true' && tr.dataset.dynamic === 'false';
+    if (riskFilter === 'FULL')   filt = tr.dataset.dynamic === 'true';
+    tr.style.display = (match && filt) ? '' : 'none';
+  });
+}
+
+function setFilter(f, btn) {
+  riskFilter = f;
+  document.querySelectorAll('.p-filter').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  filterTable();
+}
+</script>
+{% endblock %}
